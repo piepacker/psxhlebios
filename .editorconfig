@@ -1,0 +1,19 @@
+root = true
+
+[*]
+indent_style = space
+end_of_line = lf
+
+[*.{cpp,h,inl}]
+insert_final_newline = true
+indent_size = 4
+
+[*.{txt,md}]
+indent_size = 4
+
+[*,{html,xml,cs}]
+indent_size = 2
+
+[*,{csproj,vcxproj,sln}]
+indent_style = tab
+end_of_line = lf
