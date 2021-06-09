@@ -21,7 +21,8 @@
 * Internal PSX HLE functions.
 */
 
-#include "psxhle.h"
+#include "libpsxhle.h"
+#include "libpsxbios.h"
 
 #if 0
 #define PSXHLE_LOG SysPrintf

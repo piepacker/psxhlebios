@@ -17,9 +17,17 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA 02111-1307 USA.           *
  ***************************************************************************/
 
-#ifndef __PSXHLE_H__
-#define __PSXHLE_H__
+#ifndef __LIBPSXHLE_H__
+#define __LIBPSXHLE_H__
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 extern void (*psxHLEt[256])();
+
+#ifdef __cplusplus
+};
+#endif
 
 #endif

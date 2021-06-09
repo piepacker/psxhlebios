@@ -17,18 +17,14 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA 02111-1307 USA.           *
  ***************************************************************************/
 
-#ifndef __PSXBIOS_H__
-#define __PSXBIOS_H__
+#ifndef __LIBPSXBIOS_H__
+#define __LIBPSXBIOS_H__
+
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include "psxcommon.h"
-#include "r3000a.h"
-#include "psxmem.h"
-#include "misc.h"
-#include "sio.h"
 
 extern const char * const biosA0n[256];
 extern const char * const biosB0n[256];
@@ -46,7 +42,7 @@ extern void (*biosA0[256])();
 extern void (*biosB0[256])();
 extern void (*biosC0[256])();
 
-extern boolean hleSoftCall;
+extern uint8_t hleSoftCall;
 
 #ifdef __cplusplus
 }
