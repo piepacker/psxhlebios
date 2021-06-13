@@ -77,6 +77,11 @@
 #endif
 
 
+#if _MSC_VER
+#   pragma warning(disable : 4244)      // this one is just silly.
+#   pragma warning(disable : 4245)      // this is for 64-bit pointer cast to 32 bit int. It would be nice to enable but all the stdlib stuff depends on it for now.
+#endif
+
 #if !HLE_PCSX_IFC
 using u32  = uint32_t;
 using s32  = int32_t;
@@ -87,6 +92,22 @@ using s8   = int8_t;
 using uptr = uintptr_t;
 using sptr = intptr_t;
 #endif
+
+template<typename T, typename T2>
+void StoreToLE(T& dest, const T2& src) {
+    static_assert(std::is_fundamental<T>::value && std::is_fundamental<T2>::value);
+    static_assert(sizeof(T) == sizeof(T2));
+    dest = LoadFromLE((T)src);
+}
+
+template<typename T, typename T2>
+void StoreToBE(T& dest, const T& src) {
+    static_assert(std::is_fundamental<T>::value && std::is_fundamental<T2>::value);
+    static_assert(sizeof(T) == sizeof(T2));
+    dest = LoadFromBE((T)src);
+}
+
+
 
 static bool s_suppress_spam = 0;
 static std::map<std::string, int> s_repeat_supress;
@@ -1044,7 +1065,7 @@ void psxBios_strncpy() { // 0x1a
 
 void psxBios_strlen() { // 0x1b
     if (a0) {
-        char *p = (char *)Ra0;
+        char *p = Ra0;
         v0 = 0;
         while (*p++) v0++;
     }
@@ -1053,11 +1074,11 @@ void psxBios_strlen() { // 0x1b
 
 void psxBios_index() { // 0x1c
     if (a0) {
-        char *p = (char *)Ra0;
+        char *p = Ra0;
 
         do {
             if (*p == a1) {
-                v0 = a0 + (p - (char *)Ra0);
+                v0 = a0 + (p - Ra0);
                 pc0 = ra;
                 return;
             }
@@ -1308,12 +1329,12 @@ void psxBios_memchr() { // 0x2e
 void psxBios_rand() { // 0x2f
     u32 s = psxMu32(0x9010) * 1103515245 + 12345;
     v0 = (s >> 16) & 0x7fff;
-    psxMu32ref(0x9010) = LoadFromLE(s);
+    StoreToLE(psxMu32ref(0x9010), s);
     pc0 = ra;
 }
 
 void psxBios_srand() { // 0x30
-    psxMu32ref(0x9010) = LoadFromLE(a0);
+    StoreToLE(psxMu32ref(0x9010), a0);
     pc0 = ra;
 }
 
@@ -1366,7 +1387,7 @@ start:
     hp = lp = a + n;
     i = a;
     j = l - qswidth;
-    while (TRUE) {
+    while (1) {
         if (i < lp) {
             if ((c = qscmp(i, lp)) == 0) {
                 qexchange(i, lp -= qswidth);
@@ -1466,7 +1487,7 @@ void psxBios_malloc() { // 0x33
         else {
             if(colflag == 1) {			// collection is over
                 colflag = 0;
-                *newchunk = SWAP32(dsize | 1);
+                StoreToLE(*newchunk, dsize | 1);
             }
         }
 
@@ -1475,7 +1496,7 @@ void psxBios_malloc() { // 0x33
     }
     // if neccessary free memory on end of heap
     if (colflag == 1)
-        *newchunk = SWAP32(dsize | 1);
+        StoreToLE(*newchunk, dsize | 1);
 
     chunk = heap_addr;
     csize = ((u32)*chunk) & 0xfffffffc;
@@ -1515,9 +1536,9 @@ void psxBios_malloc() { // 0x33
         return;
     } else {
         // split free chunk
-        *chunk = SWAP32(dsize);
+        StoreToLE(*chunk, dsize);
         newchunk = (u32*)((sptr)chunk + dsize + 4);
-        *newchunk = SWAP32(((csize - dsize - 4) & 0xfffffffc) | 1);
+        StoreToLE(*newchunk, ((csize - dsize - 4) & 0xfffffffc) | 1);
     }
 
     // return pointer to allocated memory
@@ -1593,7 +1614,7 @@ void psxBios_InitHeap() { // 0x39
     heap_size = size;
     heap_end = (u32 *)((u8 *)heap_addr + heap_size);
     /* HACKFIX: Commenting out this line fixes GTA2 crash */
-    //*heap_addr = SWAP32(size | 1);
+    //StoreToLE(*heap_addr, size | 1);
 
     SysPrintf("InitHeap %x,%x : %x %x\n",a0,a1, (int)((uptr)heap_addr-(uptr)PSX_RAM_START), size);
 
@@ -1676,10 +1697,10 @@ void psxBios_printf() { // 0x3f
     psp = PSXM(sp);
     if (psp) {
         memcpy(save, psp, 4 * 4);
-        psxMu32ref(sp + 0 ) = SWAP32((u32)a0);
-        psxMu32ref(sp + 4 ) = SWAP32((u32)a1);
-        psxMu32ref(sp + 8 ) = SWAP32((u32)a2);
-        psxMu32ref(sp + 12) = SWAP32((u32)a3);
+        StoreToLE(psxMu32ref(sp + 0 ), a0);
+        StoreToLE(psxMu32ref(sp + 4 ), a1);
+        StoreToLE(psxMu32ref(sp + 8 ), a2);
+        StoreToLE(psxMu32ref(sp + 12), a3);
     }
 
     const char* fmt = Ra0;
@@ -1846,7 +1867,7 @@ void psxBios_Load() { // 0x42
 
         for(int i=0; i<sizeof(tdesc) / 4; ++i) {
             auto* val = (int32_t*)&tdesc + i;
-            *val = SWAP32(*val);
+            StoreToLE(*val, *val);
         }
 
         intmax_t text_addr = tdesc.t_addr;
@@ -1924,7 +1945,7 @@ void psxBios_GPU_dw() { // 0x46
     size = (a2*a3+1)/2;
     ptr = (s32*)PSXM(Rsp[4]);  //that is correct?
     do {
-        GPU_W_DATA(SWAP32(*ptr));
+        GPU_W_DATA(LoadFromLE(*ptr));
         ptr++;
     } while(--size);
 
@@ -1964,7 +1985,7 @@ void psxBios_GPU_cwb() { // 0x4a
     s32 *ptr = (s32*)Ra0;
     int size = a1;
     while(size--) {
-        GPU_W_DATA(SWAP32(*ptr));
+        GPU_W_DATA(LoadFromLE(*ptr));
         ptr++;
     }
 
@@ -2066,13 +2087,13 @@ void psxBios_SetMem() { // 9f
 
     switch(a0) {
         case 2:
-            psxHu32ref(0x1060) = SWAP32(nx);
+            StoreToLE(psxHu32ref(0x1060), nx);
             psxMu32ref(0x060) = a0;
             SysPrintf("Change effective memory : %d MBytes\n",a0);
             break;
 
         case 8:
-            psxHu32ref(0x1060) = SWAP32(nx | 0x300);
+            StoreToLE(psxHu32ref(0x1060), nx | 0x300);
             psxMu32ref(0x060) = a0;
             SysPrintf("Change effective memory : %d MBytes\n",a0);
     
@@ -2162,8 +2183,8 @@ void psxBios_StartRCnt() { // 04
     a0&= 0x3;
 
     auto imask = Read_IMASK();
-    if (a0 != 3) { imask |= SWAP32((u32)((1<<(a0+4)))); }
-    else         { imask |= SWAPu32(0x1); }
+    if (a0 != 3) { imask |= LoadFromLE<u32>((1<<(a0+4))); }
+    else         { imask |= LoadFromLE<u32>(0x1); }
     Write_IMASK(imask);
 
     v0 = 1;
@@ -2176,8 +2197,8 @@ void psxBios_StopRCnt() { // 05
     a0&= 0x3;
 
     auto imask = Read_IMASK();
-    if (a0 != 3) { imask &= ~SWAP32((u32)((1<<(a0+4)))); }
-    else         { imask &= ~SWAPu32(0x1); }
+    if (a0 != 3) { imask &= ~LoadFromLE<u32>((1<<(a0+4))); }
+    else         { imask &= ~LoadFromLE<u32>(0x1); }
     Write_IMASK(imask);
 
     pc0 = ra;
@@ -2577,7 +2598,7 @@ void psxBios_UnDeliverEvent() { // 0x20
 #if HLE_PCSX_IFC
 #define buread(Ra1, mcd, length) { \
     SysPrintf("read %d: %x,%x (%s)\n", FDesc[1 + mcd].mcfile, FDesc[1 + mcd].offset, a2, Mcd##mcd##Data + 128 * FDesc[1 + mcd].mcfile + 0xa); \
-    ptr = Mcd##mcd##Data + 8192 * FDesc[1 + mcd].mcfile + FDesc[1 + mcd].offset; \
+    char* ptr = Mcd##mcd##Data + 8192 * FDesc[1 + mcd].mcfile + FDesc[1 + mcd].offset; \
     memcpy(Ra1, ptr, length); \
     if (FDesc[1 + mcd].mode & 0x8000) { \
     DeliverEvent(0x11, 0x2); /* 0xf0000011, 0x0004 */ \
@@ -2590,7 +2611,7 @@ void psxBios_UnDeliverEvent() { // 0x20
 #define buwrite(Ra1, mcd, length) { \
     u32 offset =  + 8192 * FDesc[1 + mcd].mcfile + FDesc[1 + mcd].offset; \
     SysPrintf("write %d: %x,%x\n", FDesc[1 + mcd].mcfile, FDesc[1 + mcd].offset, a2); \
-    ptr = Mcd##mcd##Data + offset; \
+    char* ptr = Mcd##mcd##Data + offset; \
     memcpy(ptr, Ra1, length); \
     FDesc[1 + mcd].offset += length; \
     SaveMcd(Config.Mcd##mcd, Mcd##mcd##Data, offset, length); \
@@ -2680,7 +2701,6 @@ static void buopen(int mcd, char *ptr, char *cfg)
 /* TODO FIX ME : Properly implement this behaviour */
 void psxBios_getc(void) // 0x03, 0x35
 {
-    char *ptr;
     void *pa1 = Ra1;
 
     PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x03]);
@@ -2700,7 +2720,6 @@ void psxBios_getc(void) // 0x03, 0x35
 /* Copy of psxBios_write, except size is 1. */
 void psxBios_putc(void) // 0x09, 0x3B
 {
-    char *ptr;
     void *pa1 = Ra1;
 
     PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x09]);
@@ -2783,7 +2802,6 @@ void psxBios_lseek() { // 0x33
  */
 
 void psxBios_read() { // 0x34
-    char *ptr;
     void *pa1 = Ra1;
 
     PSXBIOS_LOG("psxBios_%s: %x, %x, %x\n", biosB0n[0x34], a0, a1, a2);
@@ -2805,7 +2823,6 @@ void psxBios_read() { // 0x34
  */
 
 void psxBios_write() { // 0x35/0x03
-    char *ptr;
     auto *pa1 = Ra1;
 
     PSXBIOS_LOG("psxBios_%s: %x,%x,%x\n", biosB0n[0x35], a0, a1, a2);
@@ -3752,40 +3769,40 @@ void psxBiosInitFull() {
         // it should only be performed when bypassing BIOS entirely --jstine
 
         auto* ptr = (u32 *)PSXM(0x0874); // b0 table
-        ptr[0] = SWAPu32(0x4c54 - 0x884);
+        StoreToLE(ptr[0], 0x4c54 - 0x884);
 
         ptr = (u32 *)PSXM(0x0674); // c0 table
-        ptr[6] = SWAPu32(0xc80);
+        StoreToLE(ptr[6], 0xc80);
 
-        psxMu32ref(0x0150) = SWAPu32(0x160);
-        psxMu32ref(0x0154) = SWAPu32(0x320);
-        psxMu32ref(0x0160) = SWAPu32(0x248);
+        StoreToLE(psxMu32ref(0x0150), 0x160);
+        StoreToLE(psxMu32ref(0x0154), 0x320);
+        StoreToLE(psxMu32ref(0x0160), 0x248);
         strcpy((char *)PSXM(0x248), "bu");
-    /*	psxMu32ref(0x0ca8) = SWAPu32(0x1f410004);
-        psxMu32ref(0x0cf0) = SWAPu32(0x3c020000);
-        psxMu32ref(0x0cf4) = SWAPu32(0x2442641c);
-        psxMu32ref(0x09e0) = SWAPu32(0x43d0);
-        psxMu32ref(0x4d98) = SWAPu32(0x946f000a);
+    /*	StoreToLE(psxMu32ref(0x0ca8), 0x1f410004);
+        StoreToLE(psxMu32ref(0x0cf0), 0x3c020000);
+        StoreToLE(psxMu32ref(0x0cf4), 0x2442641c);
+        StoreToLE(psxMu32ref(0x09e0), 0x43d0);
+        StoreToLE(psxMu32ref(0x4d98), 0x946f000a);
     */
         // opcode HLE
-        (u32&)PSX_ROM_START[0x0000] = SWAPu32((0x3b << 26) | 4);
+        (u32&)PSX_ROM_START[0x0000] = LoadFromLE<u32>((0x3b << 26) | 4);
         /* Whatever this does, it actually breaks CTR, even without the uninitiliazed memory patch.
         Normally games shouldn't read from address 0 yet they do. See explanation below in details. */
-        //psxMu32ref(0x0000) = SWAPu32((0x3b << 26) | 0);
-        psxMu32ref(0x00a0) = SWAPu32((0x3b << 26) | 1);
-        psxMu32ref(0x00b0) = SWAPu32((0x3b << 26) | 2);
-        psxMu32ref(0x00c0) = SWAPu32((0x3b << 26) | 3);
-        psxMu32ref(0x4c54) = SWAPu32((0x3b << 26) | 0);
-        psxMu32ref(0x8000) = SWAPu32((0x3b << 26) | 5);
-        psxMu32ref(0x07a0) = SWAPu32((0x3b << 26) | 0);
-        psxMu32ref(0x0884) = SWAPu32((0x3b << 26) | 0);
-        psxMu32ref(0x0894) = SWAPu32((0x3b << 26) | 0);
+        //StoreToLE(psxMu32ref(0x0000), (0x3b << 26) | 0);
+        StoreToLE(psxMu32ref(0x00a0), (0x3b << 26) | 1);
+        StoreToLE(psxMu32ref(0x00b0), (0x3b << 26) | 2);
+        StoreToLE(psxMu32ref(0x00c0), (0x3b << 26) | 3);
+        StoreToLE(psxMu32ref(0x4c54), (0x3b << 26) | 0);
+        StoreToLE(psxMu32ref(0x8000), (0x3b << 26) | 5);
+        StoreToLE(psxMu32ref(0x07a0), (0x3b << 26) | 0);
+        StoreToLE(psxMu32ref(0x0884), (0x3b << 26) | 0);
+        StoreToLE(psxMu32ref(0x0894), (0x3b << 26) | 0);
 
         // initial stack pointer for BIOS interrupt
-        psxMu32ref(0x6c80) = SWAPu32(0x000085c8);
+        StoreToLE(psxMu32ref(0x6c80), 0x000085c8);
 
         // initial RNG seed
-        psxMu32ref(0x9010) = SWAPu32(0xac20cc00);
+        StoreToLE(psxMu32ref(0x9010), 0xac20cc00);
 
 #if HAS_ZLIB
         // fonts
@@ -3798,7 +3815,7 @@ void psxBiosInitFull() {
 
         // memory size 2 MB
         // (mednafen doesn't seem to bother to set this...)
-        //psxHu32ref(0x1060) = SWAPu32(0x00000b88);
+        //StoreToLE(psxHu32ref(0x1060), 0x00000b88);
 
 
         /*	Some games like R-Types, CTR, Fade to Black read from adress 0x00000000 due to uninitialized pointers.
@@ -3808,14 +3825,14 @@ void psxBiosInitFull() {
             Crash Team Racing will softlock after the Sony logo.
         */
 
-        psxMu32ref(0x0000) = SWAPu32(0x00000003);
+        StoreToLE(psxMu32ref(0x0000),0x00000003);
         /*
         But overwritten by 00000003h after soon.
-        psxMu32ref(0x0000) = SWAPu32(0x00001A3C);
+        StoreToLE(psxMu32ref(0x0000), 0x00001A3C);
         */
-        psxMu32ref(0x0004) = SWAPu32(0x800C5A27);
-        psxMu32ref(0x0008) = SWAPu32(0x08000403);
-        psxMu32ref(0x000C) = SWAPu32(0x00000000);
+        StoreToLE(psxMu32ref(0x0004), 0x800C5A27);
+        StoreToLE(psxMu32ref(0x0008), 0x08000403);
+        StoreToLE(psxMu32ref(0x000C), 0x00000000);
     }
 #endif
 }
@@ -3958,7 +3975,7 @@ void psxBiosLoadExecCdrom() {
 
         for(int i=0; i<sizeof(tdesc) / 4; ++i) {
             auto* val = (int32_t*)&tdesc + i;
-            *val = SWAP32(*val);
+            StoreToLE(*val, *val);
         }
 
         intmax_t text_addr = tdesc.t_addr & 0x1fffffff;
@@ -4009,7 +4026,7 @@ void psxBiosLoadExecCdrom() {
         bufcount = (pad_buf##pad[1] & 0x0f) * 2; \
     } \
     PAD##pad##_poll(0); \
-    i = 2; \
+    int i = 2; \
     while (bufcount--) { \
         pad_buf##pad[i++] = PAD##pad##_poll(0); \
     } \
@@ -4017,7 +4034,7 @@ void psxBiosLoadExecCdrom() {
 
 #if HLE_ENABLE_EXCEPTION
 void biosInterrupt() {
-    int i, bufcount;
+    int bufcount;
 
     // Looks like this is polling the pads on every interrupt, which is definitely
     // not what we want. Will have to dig into it later and see if I can figure out why
@@ -4103,11 +4120,10 @@ void psxBiosException180() {
     // bfc00180 exception vector, which occurs when an exception occurs from the exception handler.
     // normally this never happens, usually indicates a bug in the emulator.
 
-    assert(false);
+    dbg_abort();
 }
 
 void psxBiosException80() {
-    int i;
 
   static const char* const exmne[16] =
   {
@@ -4123,7 +4139,7 @@ void psxBiosException80() {
             sp = psxMu32(0x6c80); // create new stack for interrupt handlers
             biosInterrupt();
 
-            for (i = 0; i < 8; i++) {
+            for (int i = 0; i < 8; i++) {
                 if (SysIntRP[i]) {
                     u32 *queue = (u32 *)PSXM(SysIntRP[i]);
 
@@ -4137,8 +4153,7 @@ void psxBiosException80() {
 
             if (jmp_int) {
                 uint32_t* jmpptr = (uint32_t*)PSXM(jmp_int);
-                int jmp_addr = (u8*)jmpptr - PSX_RAM_START;
-                //PSXBIOS_LOG("jmp_int @ %08x - ra=%08x sp=%08x fp=%08x\n", jmp_addr, jmpptr[0], jmpptr[1], jmpptr[2]);
+                //PSXBIOS_LOG("jmp_int @ %08x - ra=%08x sp=%08x fp=%08x\n", jmp_int, jmpptr[0], jmpptr[1], jmpptr[2]);
                 Write_ISTAT(0xffffffff);
 
                 ra = jmpptr[0];
@@ -4199,6 +4214,8 @@ void psxBiosException80() {
 }
 #endif
 
+
+#if HLE_PCSX_IFC
 #define bfreeze(ptr, size) { \
     if (Mode == 1) memcpy(&psxR[base], ptr, size); \
     if (Mode == 0) memcpy(ptr, &psxR[base], size); \
@@ -4210,7 +4227,7 @@ void psxBiosException80() {
 
 #define bfreezepsxMptr(ptr, type) { \
     if (Mode == 1) { \
-        if (ptr) psxRu32ref(base) = SWAPu32((s8 *)(ptr) - psxM); \
+        if (ptr) StoreToLE(psxRu32ref(base), (u32)(((s8 *)ptr) - psxM)); \
         else psxRu32ref(base) = 0; \
     } else { \
         if (psxRu32(base) != 0) ptr = (type *)(psxM + psxRu32(base)); \
@@ -4239,3 +4256,4 @@ void psxBiosFreeze(int Mode) {
     bfreezel(&pad_stopped);
     bfreezel(&heap_size);
 }
+#endif
