@@ -9,9 +9,9 @@
 #include "posix_file.h"
 #include "defer.h"
 
-#define HLE_MEDNAFEN_IFC 0
-#define HLE_PCSX_IFC     1
-
+#if HLE_PCSX_IFC
+#   include "plugins.h"
+#endif
 
 // verbose information is logged to stderr to avoid corrupting stdout behavior.
 // (stdout information may be used by other scripts in automation pipeline)
@@ -111,39 +111,23 @@ void AddFile(psdisc_off_t secstart, psdisc_off_t len, int type, const uint8_t* n
 #include "mednafen/cdrom/cdromif.h"
 extern CDIF* GetCurrentCDIF();
 CDIF* s_cur_cdif;
+#endif
 
-void psxFs_CacheFilesystem() {
+#if HLE_DUCKSTATION_IFC
+#include "common/cd_image.h"
 
-    auto cdif = GetCurrentCDIF();
+#include <memory>
 
-    // pointer comparison, not my ideal choice, but the cdif doesn't give us much internal data from
-    // which to further identify the media from another media.
-    if (cdif == s_cur_cdif) {
-        return;
-    }
+std::unique_ptr<CDImage> ds_cdimage = nullptr;
 
-    m_filesBySector   .clear();
-    m_dirsBySector    .clear();
-    m_filesByFullpath .clear();
-
-    m_dirsBySector.insert({0, fs::path()});
-
-    s_cur_cdif = cdif;
-
-    PsDiscDirParser parser;
-    parser.read_data_cb = [&](uint8_t* dest, psdisc_off_t sector, psdisc_off_t offset, psdisc_off_t length) {
-        dbg_check(offset == 0);
-        return s_cur_cdif->ReadSector(dest, sector, (length + 2047) / 2048) != 0;
-    };      
-    parser.ReadFilesystem(AddFile);
-    buildFilesByDirLUT();
+void psxFs_SetMediaFilename(std::string fullpath) {
+    
+    ds_cdimage = CDImage::Open(fullpath.c_str(), nullptr);
+    psxFs_CacheFilesystem();
 }
 #endif
 
 #if HLE_PCSX_IFC
-
-#include "plugins.h"
-
 static int s_fd = -1;
 static MediaSourceDescriptor s_media;
 static PsDisc_IO_Interface s_ioifc;
@@ -195,9 +179,10 @@ static bool ReadData2048(void* dest, psdisc_off_t sector, psdisc_off_t offset, p
 }
 
 std::string s_curfilename;
+#endif
 
 void psxFs_CacheFilesystem() {
-
+#if HLE_PCSX_IFC
     auto filename = GetIsoFile();
 
     if (s_fd >= 0) {
@@ -227,6 +212,17 @@ void psxFs_CacheFilesystem() {
         log_error("Could not parse contents of file: %s", filename);
         dbg_abort();
     }
+#endif
+
+#if HLE_MEDNAFEN_IFC
+    auto cdif = GetCurrentCDIF();
+
+    // pointer comparison, not my ideal choice, but the cdif doesn't give us much internal data from
+    // which to further identify the media from another media.
+    if (cdif == s_cur_cdif) {
+        return;
+    }
+#endif
 
     m_filesBySector   .clear();
     m_dirsBySector    .clear();
@@ -234,14 +230,40 @@ void psxFs_CacheFilesystem() {
 
     m_dirsBySector.insert({0, fs::path()});
 
+#if HLE_PCSX_IFC
+    m_dirsBySector.insert({0, fs::path()});
+
     PsDiscDirParser parser;
     parser.read_data_cb = ReadData2048; 
     parser.ReadFilesystem(AddFile);
     buildFilesByDirLUT();
-}
 #endif
 
-fs::path psFs_Canonalize(const char* src) {
+#if HLE_MEDNAFEN_IFC
+    s_cur_cdif = cdif;
+    PsDiscDirParser parser;
+    parser.read_data_cb = [&](uint8_t* dest, psdisc_off_t sector, psdisc_off_t offset, psdisc_off_t length) {
+        dbg_check(offset == 0);
+        return s_cur_cdif->ReadSector(dest, sector, (length + 2047) / 2048) != 0;
+    };      
+#endif
+
+#if HLE_DUCKSTATION_IFC
+    PsDiscDirParser parser;
+    parser.read_data_cb = [&](uint8_t* dest, psdisc_off_t sector, psdisc_off_t offset, psdisc_off_t length) {
+        dbg_check(offset == 0);
+        dbg_check(sector);
+        dbg_check((length & 2047) == 0);
+        ds_cdimage->Seek(1, sector);
+
+        auto nSectors = length / 2048;
+        auto secread = ds_cdimage->Read(CDImage::ReadMode::DataOnly, length / 2048, dest);
+        return (secread == nSectors);
+    };      
+#endif
+}
+
+fs::path psxFs_Canonicalize(const char* src) {
     if (!src) return {};
 
     // skip rooted slash. All paths are assumed to be rooted.
@@ -260,7 +282,7 @@ fs::path psFs_Canonalize(const char* src) {
     return result;
 }
 
-bool psxFs_ReadSectorData2048(void* dest,  psdisc_sec_t sector, int nSectors) {
+bool psxFs_ReadSectorData2048(void* dest, psdisc_sec_t sector, int nSectors) {
     psxFs_CacheFilesystem();
 #if HLE_PCSX_IFC
     return ReadData2048(dest, sector, 0, nSectors * 2048);
@@ -268,12 +290,21 @@ bool psxFs_ReadSectorData2048(void* dest,  psdisc_sec_t sector, int nSectors) {
 #if HLE_MEDNAFEN_IFC
     return s_cur_cdif->ReadSector((uint8_t*)dest, sector, nSectors) != 0;
 #endif
+
+#if HLE_DUCKSTATION_IFC
+    uint8_t* dp8 = (uint8_t*)dest;
+    ds_cdimage->Seek(1, sector);
+
+    auto secread = ds_cdimage->Read(CDImage::ReadMode::DataOnly, nSectors, dest);
+    return (secread == nSectors);
+#endif
+
 }
 
 // Result from this read can be fed directly into CDIF::ReadSector() by caller.
 // returns 0 on failure (sector 0 is never a valid position for a cdrom file).
 psdisc_sec_t psxFs_GetFileSector(const char* path) {
-    auto canon = psFs_Canonalize(path);
+    auto canon = psxFs_Canonicalize(path);
     if (auto it = m_filesByFullpath.find(canon); it != m_filesByFullpath.end()) {
         return it->second.start_sector;
     }
@@ -281,7 +312,7 @@ psdisc_sec_t psxFs_GetFileSector(const char* path) {
 }
 
 bool psxFs_LoadFile(const char* path, std::vector<uint8_t>& dest) {
-    auto canon = psFs_Canonalize(path);
+    auto canon = psxFs_Canonicalize(path);
 
     log_host("Here it is:");
     log_host(" > %s", path);
@@ -293,14 +324,8 @@ bool psxFs_LoadFile(const char* path, std::vector<uint8_t>& dest) {
         dest.resize(len_in_sectors * 2048);
         auto* dptr = dest.data();
 
-#if HLE_PCSX_IFC
-        auto read_result = ReadData2048(dest.data(), item.start_sector, 0, len_in_sectors * 2048);
+        auto read_result = psxFs_ReadSectorData2048(dest.data(), item.start_sector, len_in_sectors);
         dbg_check(read_result);
-#endif
-#if HLE_MEDNAFEN_IFC
-        auto read_result = s_cur_cdif->ReadSector(dest.data(), item.start_sector, len_in_sectors);
-        dbg_check(read_result != 0);
-#endif
         return read_result;
     }
     return 0;
@@ -308,7 +333,7 @@ bool psxFs_LoadFile(const char* path, std::vector<uint8_t>& dest) {
 
 bool psxFs_LoadExecutableHeader(const char* path, PSX_EXE_HEADER& dest) {
     psxFs_CacheFilesystem();
-    auto canon = psFs_Canonalize(path);
+    auto canon = psxFs_Canonicalize(path);
 
     log_host("Here it is:");
     log_host(" > %s", path);
@@ -317,14 +342,8 @@ bool psxFs_LoadExecutableHeader(const char* path, PSX_EXE_HEADER& dest) {
     if (auto it = m_filesByFullpath.find(canon); it != m_filesByFullpath.end()) {
         auto& item = it->second;
         //log_host(" > sector = %jd", JFMT(it->second.start_sector));
-#if HLE_PCSX_IFC
-        auto read_result = ReadData2048(&dest, item.start_sector, 0, 1 * 2048);
+        auto read_result = psxFs_ReadSectorData2048((uint8_t*)&dest, item.start_sector, 1);
         dbg_check(read_result);
-#endif
-#if HLE_MEDNAFEN_IFC
-        auto read_result = s_cur_cdif->ReadSector(&dest, item.start_sector, 1);
-        dbg_check(read_result != 0);
-#endif
         return read_result;
     }
 

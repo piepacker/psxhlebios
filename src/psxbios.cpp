@@ -31,9 +31,10 @@
 // TODO: implement all system calls, count the exact CPU cycles of system calls.
 
 
-#include "psxbios.h"
+#include "libpsxbios.h"
 #include "psxhle-filesystem.h"
 #include "psdisc-types.h"
+#include "psdisc-endian.h"
 #include "jfmt.h"
 
 
@@ -45,10 +46,6 @@
 #include <cstdio>
 #include <string>
 #include <map>
-
-#define HLE_MEDNAFEN_IFC    0
-#define HLE_PCSX_IFC        1
-#define HLE_DUCKSTATION_IFC 0
 
 #if !defined(HAS_ZLIB)
 #   define HAS_ZLIB         1
@@ -632,11 +629,12 @@ static FileDesc FDesc[32];
 
 // oh silly PCSX. they did the classic VM nono and just recursively called the interpreter
 // in order to emulate softCalls. A miracle this ever worked.
-// For our purposes in Mednafen, we need to do things properly, which means setting up the
-// VM state and then exiting the current C code, and resuming C code (via special hook)
-// after the interpreter has done its part.
+// This hleSoftCall hack works around the common case failure of one re-entrant call, but fails
+// if more than one re-entrant call occurs. (it can also fail in some other edge-casy ways in 
+// PCSX depending on some timing and HW state things which aren't being tracked in a re-entrant 
+// friendly fashion)
 
-uint8_t hleSoftCall = FALSE;      // commented out because nesting interpreter is very uncool. --jstine
+uint8_t hleSoftCall = 0;
 
 // Pick an unmapped area of PSX memory to treat as soft call return address.
 static const u32 kSoftCallBaseRetAddr = 0x8100'0000;
@@ -1310,12 +1308,12 @@ void psxBios_memchr() { // 0x2e
 void psxBios_rand() { // 0x2f
     u32 s = psxMu32(0x9010) * 1103515245 + 12345;
     v0 = (s >> 16) & 0x7fff;
-    psxMu32ref(0x9010) = SWAPu32(s);
+    psxMu32ref(0x9010) = LoadFromLE(s);
     pc0 = ra;
 }
 
 void psxBios_srand() { // 0x30
-    psxMu32ref(0x9010) = SWAPu32(a0);
+    psxMu32ref(0x9010) = LoadFromLE(a0);
     pc0 = ra;
 }
 
