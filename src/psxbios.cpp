@@ -32,15 +32,15 @@
 
 
 #include "libpsxbios.h"
+#include "psxhle-emu-ifc.h"
+
 #include "psxhle-filesystem.h"
 #include "psdisc-types.h"
 #include "psdisc-endian.h"
 #include "jfmt.h"
 
-
 #include "StringTokenizer.h"
 #include "StringUtil.h"
-#include "icy_assert.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -55,43 +55,8 @@
 #   include <zlib.h>
 #endif
 
-#if HLE_PCSX_IFC
-#   include "psxhw.h"
-#   include "gpu.h"
-#   include "sio.h"
-#endif
+#include "psxhle-emu-ifc-regs.h"
 
-#if HLE_MEDNAFEN_IFC
-#   include "mednafen/psx/dis.h"
-#   include "mednafen/psx/psx.h"
-#   include "mednafen/psx/timer.h"
-#endif
-
-#if HLE_DUCKSTATION_IFC
-#   include "core/cpu_core.h"
-#   include "core/bus.h"
-#   include "core/gpu.h"
-#   include "core/dma.h"
-#   include "core/timers.h"
-#   include "core/interrupt_controller.h"
-#endif
-
-
-#if _MSC_VER
-#   pragma warning(disable : 4244)      // this one is just silly.
-#   pragma warning(disable : 4245)      // this is for 64-bit pointer cast to 32 bit int. It would be nice to enable but all the stdlib stuff depends on it for now.
-#endif
-
-#if !HLE_PCSX_IFC
-using u32  = uint32_t;
-using s32  = int32_t;
-using u16  = uint16_t;
-using s16  = int16_t;
-using u8   = uint8_t;
-using s8   = int8_t;
-using uptr = uintptr_t;
-using sptr = intptr_t;
-#endif
 
 template<typename T, typename T2>
 void StoreToLE(T& dest, const T2& src) {
@@ -116,54 +81,6 @@ static bool is_suppressed(const char* check) {
     return s_suppress_spam && (++s_repeat_supress[check] > 2);
 };
 
-#if !defined(PSXBIOS_LOG)
-#   define PSXBIOS_LOG(...) (printf("[HLEBIOS] " __VA_ARGS__), fflush(nullptr))
-//#   define PSXBIOS_LOG(...) (void(0))
-#endif
-
-// new psxbios with signature matching PSXBIOS_LOG_SPAM.
-#if !defined(PSXBIOS_LOG_NEW)
-#   define PSXBIOS_LOG_NEW(func, ...) (printf("[HLEBIOS] " func " " __VA_ARGS__), fflush(nullptr))
-#endif
-
-#if !defined(PSXBIOS_LOG_SPAM)
-#   define PSXBIOS_LOG_SPAM(func, ...) ( !is_suppressed(func) && (printf("[HLEBIOS] " func " " __VA_ARGS__), fflush(nullptr), 1))
-#endif
-
-#define HLE_FULL                1       // enables full ROM-less HLE support
-
-// HLE exception handler depends on full HLE (everything in the list has to be 1)
-#define HLE_ENABLE_EXCEPTION    (HLE_FULL && 1)
-
-// Dev notes:
-//  * Tekken 2/3 do not use threads
-//  * Tekken 2/3 do not use root counters (rcnt)
-//  * Tekken 2/3 do not use the Event system (DeliverEvent, etc)
-//  * Tekken 2/3 do not use GPU APIs
-
-#define HLE_ENABLE_HEAP         (HLE_FULL || 1)
-#define HLE_ENABLE_GPU			(HLE_FULL || 1)
-#define HLE_ENABLE_RCNT			(HLE_FULL || 1)
-
-// Rest of these are not useful due to interdependence on exception handler and full hle.
-
-#define HLE_ENABLE_THREAD       (HLE_FULL || 1)
-#define HLE_ENABLE_MCD			(HLE_FULL || 1)
-#define HLE_ENABLE_EVENT        (HLE_FULL || 1)
-#define HLE_ENABLE_LOADEXEC		(HLE_FULL || 1)       // depends on ISO9660 filesystem API
-
-#define HLE_ENABLE_FILEIO		(HLE_PCSX_IFC || (HLE_FULL && 1))       // fileio depends on HLE memcard ?
-#define HLE_ENABLE_PAD			(HLE_PCSX_IFC || (HLE_FULL && 1))
-#define HLE_ENABLE_ENTRYINT     (HLE_PCSX_IFC || (HLE_FULL && 1))
-
-#define HLE_ENABLE_FINDFILE     (0            || (HLE_FULL && 0))
-#define HLE_ENABLE_FORMAT       (0            || (HLE_FULL && 0))
-
-
-// qsort needs to be rewritten before it can be enabled. And once rewritten, probably can remove
-// the conditional build for it.. no good reason to disable it except right now it doesn't build --jstine
-
-#define HLE_ENABLE_QSORT        0
 
 static bool hle_config_get_bool(std::string opt) {
     return 1;
@@ -307,159 +224,6 @@ const char * const biosC0n[256] = {
 };
 
 #if HLE_PCSX_IFC
-extern char McdDisable[2];
-
-#define PSX_RAM_START ((u8*)psxM)
-#define PSX_ROM_START ((u8*)psxR)
-#define PSX_SPR_START ((u8*)psxH)
-
-#define GPR_ARRAY (psxRegs.GPR.r)
-#define pc0 (psxRegs.pc)
-#define lo  (psxRegs.GPR.n.lo)
-#define hi  (psxRegs.GPR.n.hi)
-
-#define CP0_EPC      (psxRegs.CP0.n.EPC	  )
-#define CP0_CAUSE    (psxRegs.CP0.n.Cause   )
-#define CP0_STATUS   (psxRegs.CP0.n.Status  )
-
-#define RCNT_SetCount(rid, val)     psxRcntWcount (rid, val)
-#define RCNT_SetMode(rid, val)      psxRcntWmode  (rid, val)
-#define RCNT_SetTarget(rid, val)    psxRcntWtarget(rid, val)
-#define RCNT_GetCount(rid)          psxRcntRcount (rid)
-#define RCNT_GetMode(rid)           psxRcntRmode  (rid)
-#define RCNT_GetTarget(rid)         psxRcntRtarget(rid)
-
-static void Write_ISTAT(u32 val) { psxHwWrite32(0x1f801070, val); }
-static void Write_IMASK(u32 val) { psxHwWrite32(0x1f801074, val); }
-static u32 Read_ISTAT() { return psxHu32(0x1070); }
-static u32 Read_IMASK() { return psxHu32(0x1074); }
-
-static void SetPC(uint32_t newpc) {
-    psxRegs.pc = newpc;
-}
-#endif
-
-#if HLE_MEDNAFEN_IFC
-#define GPR_ARRAY (PSX_CPU->GPR)
-#define pc0 (PSX_CPU->BACKED_PC)
-#define lo  (PSX_CPU->LO)
-#define hi  (PSX_CPU->HI)
-
-#define CP0_EPC      (PSX_CPU->CP0.EPC	  )
-#define CP0_CAUSE    (PSX_CPU->CP0.CAUSE  )
-#define CP0_STATUS   (PSX_CPU->CP0.SR     )
-
-#define PSX_RAM_START (MainRAM->data8)
-#define PSX_ROM_START (BIOSROM->data8)
-#define PSX_SPR_START (ScratchRAM->data8)
-
-#define RCNT_SetCount(rid, val)    TIMER_Write(0, ((rid) << 4) | 0x00, val)
-#define RCNT_SetMode(rid, val)     TIMER_Write(0, ((rid) << 4) | 0x04, val)
-#define RCNT_SetTarget(rid, val)   TIMER_Write(0, ((rid) << 4) | 0x08, val)
-#define RCNT_GetCount(rid)         TIMER_Read (0, ((rid) << 4) | 0x00)
-#define RCNT_GetMode(rid)          TIMER_Read (0, ((rid) << 4) | 0x04)
-#define RCNT_GetTarget(rid)        TIMER_Read (0, ((rid) << 4) | 0x08)
-
-//  Weird APIs by Mednafen here... They take an address input, but only care about the 4 LSBs.
-//  They are meant for accessing 0x1070 (ISTAT) and 0x1074 (IMASK) in the hardware register map.
-//  I like to search on 1070 and 1074 in PSX emulators since it's a common pattern when
-//  looking for ISTAT and IMASK, so I used those addresses in the function call helpers.. --jstine
-
-// BUGGED? note that IRQ_Write and IRQ_Read as implemented by Mednafen are dodgy.
-//   IRQ_Write is missing masking operations on MASK.
-//   IRQ_Read is injecting random garbage on writes to unaligned addresses (1071, 1072, etc).
-//     (fortunately writes to those addresses are rare or impossible, real HW ignored them --jstine).
-
-static void Write_ISTAT(u32 val) { IRQ_Write(0x1070, val); }
-static void Write_IMASK(u32 val) { IRQ_Write(0x1074, val); }
-static u32 Read_ISTAT() { return IRQ_Read(0x1070); }
-static u32 Read_IMASK() { return IRQ_Read(0x1074); }
-
-static void SetPC(uint32_t newpc) {
-    PSX_CPU->BACKED_PC = newpc;
-    PSX_CPU->BACKED_new_PC = PSX_CPU->BACKED_PC + 4;
-}
-#endif
-
-#if HLE_DUCKSTATION_IFC
-#define GPR_ARRAY (CPU::g_state.regs.r)
-#define pc0       (CPU::g_state.regs.pc)
-#define lo        (CPU::g_state.regs.lo)
-#define hi        (CPU::g_state.regs.hi)
-
-#define CP0_EPC      (CPU::g_state.cop0_regs.EPC         )
-#define CP0_CAUSE    (CPU::g_state.cop0_regs.cause.bits  )
-#define CP0_STATUS   (CPU::g_state.cop0_regs.sr   .bits  )
-
-#define PSX_RAM_START (Bus::g_ram)
-#define PSX_ROM_START (Bus::g_bios)
-#define PSX_SPR_START (CPU::g_state.dcache.data())
-
-#define RCNT_SetCount(rid, val)     g_timers.WriteRegister(((rid) << 4) | 0x00, val)
-#define RCNT_SetMode(rid, val)      g_timers.WriteRegister(((rid) << 4) | 0x04, val)
-#define RCNT_SetTarget(rid, val)    g_timers.WriteRegister(((rid) << 4) | 0x08, val)
-#define RCNT_GetCount(rid)          g_timers.ReadRegister (((rid) << 4) | 0x00)
-#define RCNT_GetMode(rid)           g_timers.ReadRegister (((rid) << 4) | 0x04)
-#define RCNT_GetTarget(rid)         g_timers.ReadRegister (((rid) << 4) | 0x08)
-
-static void Write_ISTAT(u32 val) { g_interrupt_controller.WriteRegister(0, val); }  // 1070
-static void Write_IMASK(u32 val) { g_interrupt_controller.WriteRegister(4, val); }  // 1074
-static u32 Read_ISTAT()   { return g_interrupt_controller.ReadRegister(0); }  // 1070
-static u32 Read_IMASK()   { return g_interrupt_controller.ReadRegister(4); }  // 1074
-
-static void SetPC(uint32_t newpc) {
-    CPU::SetPC(newpc);
-}
-#endif
-
-//#define zr (GPR_ARRAY[0])
-#define at (GPR_ARRAY[1])
-#define v0 (GPR_ARRAY[2])
-#define v1 (GPR_ARRAY[3])
-#define a0 (GPR_ARRAY[4])
-#define a1 (GPR_ARRAY[5])
-#define a2 (GPR_ARRAY[6])
-#define a3 (GPR_ARRAY[7])
-#define t0 (GPR_ARRAY[8])
-#define t1 (GPR_ARRAY[9])
-#define t2 (GPR_ARRAY[10])
-#define t3 (GPR_ARRAY[11])
-#define t4 (GPR_ARRAY[12])
-#define t5 (GPR_ARRAY[13])
-#define t6 (GPR_ARRAY[14])
-#define t7 (GPR_ARRAY[15])
-#define t8 (GPR_ARRAY[16])
-#define t9 (GPR_ARRAY[17])
-#define s0 (GPR_ARRAY[18])
-#define s1 (GPR_ARRAY[19])
-#define s2 (GPR_ARRAY[20])
-#define s3 (GPR_ARRAY[21])
-#define s4 (GPR_ARRAY[22])
-#define s5 (GPR_ARRAY[23])
-#define s6 (GPR_ARRAY[24])
-#define s7 (GPR_ARRAY[25])
-#define k0 (GPR_ARRAY[26])
-#define k1 (GPR_ARRAY[27])
-#define gp (GPR_ARRAY[28])
-#define sp (GPR_ARRAY[29])
-#define fp (GPR_ARRAY[30])
-#define ra (GPR_ARRAY[31])
-
-static const uint32_t PS1_ICacheSize		= 0x00001000; // 4KB	(instruction cache)
-static const uint32_t PS1_RamPhysicalSize	= 0x00200000; // 2MB	(physical)
-static const uint32_t PS1_RamMirrorSize		= 0x00800000; // 8MB	(addressable, mirrored)
-static const uint32_t PS1_FASTRAMSIZE		= 0x00000400; // 1KB
-static const uint32_t PS1_BIOSSIZE			= 0x00080000; // 512KB
-static const uint32_t PS1_BIOSRAMSIZE		= 0x00010000; // 512KB
-static const uint32_t PS1_SegmentAddrMask	= 0x1fffffff; // masks away all segment information, useful since most emu operations don't need to care
-
-static const uint32_t PS1_FastRamStart		= 0x1f800000;
-static const uint32_t PS1_FastRamEnd		= 0x1f800000 + PS1_FASTRAMSIZE;
-static const uint32_t PS1_BiosRomStart		= 0x1fc00000;
-static const uint32_t PS1_BiosRomEnd		= 0x1fc00000 + PS1_BIOSSIZE;
-
-
-#if HLE_PCSX_IFC
 void VmcWriteNV(int port, int slot, const void* src, int size) {
     dbg_check((u32)port < 2);
     auto* dest = port ? Mcd2Data : Mcd1Data;
@@ -512,51 +276,6 @@ bool VmcEnabled(int port, int slot) {
     return 0;
 }
 #endif
-
-#if HLE_PCSX_IFC
-// to help verify the behavior of these implementations on PCSX, undef the macros and re-implement using
-// cross-platform versions. This also makes it easy to disable this on PCSX and test this specific code for regressions.
-#   undef PSXM
-#   undef psxMu32ref
-#   undef psxMu32
-#endif
-
-static u8* PSXM(u32 unmasked) {
-    auto masked = unmasked & 0x1fff'ffff;
-
-    if (masked < PS1_RamMirrorSize) {
-        return PSX_RAM_START + (masked & (PS1_RamPhysicalSize - 1));
-    }
-    else if (masked >= 0x1f800000 && masked < (0x1f800000 + PS1_FASTRAMSIZE)) {
-        return PSX_SPR_START + (masked-0x1f800000);
-    }
-    else if (masked >= 0x1fc00000 && masked < (0x1fc00000 + PS1_BIOSSIZE)) {
-        return PSX_RAM_START + (masked-0x1fc00000);
-    }
-    else {
-        dbg_check(false);
-    }
-    //else if (auto* entry = ioHandlers_[HASH_IOADDR(addr)]) {
-    //	return entry->ioRead32(addr);
-    //}
-
-    return PSX_RAM_START + masked;
-}
-
-static u32& psxMu32ref(u32 addr) {
-    return (u32&)*PSXM(addr);
-}
-
-static u32 psxMu32(u32 addr) {
-    return *(u32*)PSXM(addr);
-}
-
-#define Ra0 ((char *)PSXM(a0))
-#define Ra1 ((char *)PSXM(a1))
-#define Ra2 ((char *)PSXM(a2))
-#define Ra3 ((char *)PSXM(a3))
-#define Rv0 ((char *)PSXM(v0))
-#define Rsp ((char *)PSXM(sp))
 
 typedef struct {
     u32 desc;
@@ -656,94 +375,6 @@ static FileDesc FDesc[32];
 // friendly fashion)
 
 uint8_t hleSoftCall = 0;
-
-// Pick an unmapped area of PSX memory to treat as soft call return address.
-static const u32 kSoftCallBaseRetAddr = 0x8100'0000;
-
-enum SoftCallReturnId {
-    SCRI_None = 0,
-
-    SCRI_DeliverEvent_Resume,
-
-    SCRI_psxBios_DeliverEvent_00,
-
-    SCRI_psxBios__bu_init_00,
-    SCRI_psxBios__bu_init_01,
-    SCRI_psxBios__bu_init_02,
-
-    SCRI_psxBios__card_load_00,
-    SCRI_psxBios__card_info_00,
-
-    SCRI_psxBios__card_read_00,
-    SCRI_psxBios__card_write_00,
-
-    SCRI_MAX_COUNT
-};
-
-// Proper SoftCall:
-//  * save the current value of $ra onto the stack.
-//  * set a special return address that identifies our HLE function and it's current yield state
-//  * when the return address is detected from CPU, it bounces through HLE and resumes state
-//    machine execution -- pops old $ra off the stack.
-//
-// Using the VM's stack machine is of critical importance to ensure proper handling of thread
-// context switching which may occur during open-ended execution of interpreter.
-
-// Pedantic: the PSX expects 16 bytes of shadow space below the current callstack.
-//   Mostly things work without this, because it was only meant for use by debug builds to shadow values
-//   passd by register ($a0 -> $a4).  --jstine
-
-static void StackPush(u32 val) {
-    sp -= 4;
-    psxMu32ref(sp) = val;
-}
-
-static void StackPop(u32& val) {
-    val = psxMu32ref(sp);
-    sp += 4;
-}
-
-static SoftCallReturnId softCallYield(SoftCallReturnId id, u32 pc) {
-    StackPush(ra);
-    sp -= 0x10;     // shadow space (see notes earlier)
-
-    // perform equivalent of JAL -- update $ra and set PC.
-    ra = kSoftCallBaseRetAddr + (id*16);
-    pc0 = pc;
-    return id;
-}
-
-
-static void softCallResume() {
-    sp += 0x10;
-    StackPop(ra);
-}
-
-static void HleCallYield(SoftCallReturnId id) {
-    StackPush(ra);
-    ra = kSoftCallBaseRetAddr + (id*16);
-}
-
-static void HleCallResume() {
-    StackPop(ra);
-}
-
-static bool IsHlePC(u32 pc) {
-    return ((pc & 0xff00'0000) == kSoftCallBaseRetAddr);
-}
-
-static SoftCallReturnId HleGetCallId(u32 pc) {
-    return (SoftCallReturnId)((pc - kSoftCallBaseRetAddr) / 16);
-}
-
-static bool HleYieldCheck(SoftCallReturnId id) {
-    auto pc = pc0;
-    if (IsHlePC(pc)) {
-        if (id == SCRI_None) return 0;
-        return (int)id == HleGetCallId(pc);
-    }
-    return 1;
-}
 
 #if HLE_ENABLE_EVENT
 static void HLEcb_DeliverEvent_Resume() {
@@ -2026,7 +1657,7 @@ void psxBios_get_cd_status(void) //a6
 }
 
 #if HLE_ENABLE_EVENT
-void psxBios__bu_init() { // 70
+void psxBios__bu_init(YieldCallId id) { // 70
     PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x70]);
 
 #if HLE_ENABLE_YIELD
@@ -2035,30 +1666,10 @@ void psxBios__bu_init() { // 70
     //   level, we need to implement a ton of paperwork that the interpreter would simply
     //   handle for us via its own MIPS state machine. --jstine
 
-    if (HleYieldCheck(SCRI_None)) {
-        HleCallYield(SCRI_psxBios__bu_init_00);
-        if (DeliverEventYield(0x11, 0x2)) { // 0xf0000011, 0x0004
-            return;
-        }
-        pc0 = ra;       // allows fallthrough to next HleYield state
-    }
+    int baseState = SCRI_psxBios__bu_init_00;
+    DeliverEvent(baseState++, 0x11, 0x2); // 0xf0000011, 0x0004
+    DeliverEvent(baseState++, 0x81, 0x2); // 0xf4000001, 0x0004
 
-    if (HleYieldCheck(SCRI_psxBios__bu_init_00)) {
-        HleCallResume();
-        HleCallYield(SCRI_psxBios__bu_init_01);
-        if (DeliverEventYield(0x81, 0x2)) { // 0xf4000001, 0x0004
-            return;
-        }
-        pc0 = ra;
-    }
-
-    if (HleYieldCheck(SCRI_psxBios__bu_init_01)) {
-        HleCallResume();
-        pc0 = ra;
-    }
-    else {
-        dbg_check(false);
-    }
 #else
     DeliverEvent(0x11, 0x2); // 0xf0000011, 0x0004
     DeliverEvent(0x81, 0x2); // 0xf4000001, 0x0004
@@ -4214,6 +3825,79 @@ void psxBiosException80() {
 }
 #endif
 
+bool psxbios_invoke_any(const HLE_BIOS_TABLE& table, const char * const names[256]) {
+    int call = t1 & 0xff;
+
+
+    if (table[call]) {
+        table[call]();
+        return 1;
+    }
+    else {
+        if (const char* name = names[call]) {
+            auto my_suppress = [name](const char* check) {
+                if (strcmp(name, check)) return false;
+                return is_suppressed(check);
+            };
+            // filter out some very spammy calls.
+            if (!s_suppress_spam ||
+                   ((!my_suppress("putchar"               ))
+                &&  (!my_suppress("strlen"                ))
+                &&  (!my_suppress("ReturnFromExecption"   ))
+                &&  (!my_suppress("TestEvent"             ))
+            )){
+                PSXBIOS_LOG("callfunc %s\n", names[call]);
+            }
+        }
+    }
+
+    if (is_hle_full_mode) {
+        dbg_abort();
+    }
+    return 0;
+}
+
+bool psxbios_invoke_A0() { return psxbios_invoke_any(biosA0, biosA0n); }
+bool psxbios_invoke_B0() { return psxbios_invoke_any(biosB0, biosB0n); }
+bool psxbios_invoke_C0() { return psxbios_invoke_any(biosC0, biosC0n); }
+
+int HleDispatchCall(uint32_t pc) {
+
+    if (IsHlePC(pc)) {
+        auto id = HleGetCallId(pc);
+        dbg_check((u32)id < SCRI_MAX_COUNT);
+        HLE_Call_Table[id]();
+        return 1;
+    }
+
+    auto masked_pc = pc & 0x1fff'ffff;
+    if (masked_pc == 0x1FC00180) {
+        psxBiosException180();
+    }
+
+    if (masked_pc == 0x80) {
+        psxBiosException80();
+        return 1;
+    }
+
+    if(masked_pc == 0xA0) {
+        return psxbios_invoke_A0();
+    }
+
+    if(masked_pc == 0xB0) {
+        return psxbios_invoke_B0();
+    }
+
+    if(masked_pc == 0xC0) {
+        return psxbios_invoke_C0();
+    }
+
+    if (is_hle_full_mode) {
+        dbg_check (masked_pc >= 0x10000);
+    }
+
+    return 0;
+}
 
 #if HLE_PCSX_IFC
 #define bfreeze(ptr, size) { \

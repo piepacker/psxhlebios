@@ -115,16 +115,9 @@ CDIF* s_cur_cdif;
 
 #if HLE_DUCKSTATION_IFC
 #include "common/cd_image.h"
-
 #include <memory>
 
 std::unique_ptr<CDImage> ds_cdimage = nullptr;
-
-void psxFs_SetMediaFilename(std::string fullpath) {
-    
-    ds_cdimage = CDImage::Open(fullpath.c_str(), nullptr);
-    psxFs_CacheFilesystem();
-}
 #endif
 
 #if HLE_PCSX_IFC
@@ -292,7 +285,6 @@ bool psxFs_ReadSectorData2048(void* dest, psdisc_sec_t sector, int nSectors) {
 #endif
 
 #if HLE_DUCKSTATION_IFC
-    uint8_t* dp8 = (uint8_t*)dest;
     ds_cdimage->Seek(1, sector);
 
     auto secread = ds_cdimage->Read(CDImage::ReadMode::DataOnly, nSectors, dest);
@@ -322,7 +314,6 @@ bool psxFs_LoadFile(const char* path, std::vector<uint8_t>& dest) {
         auto& item = it->second;
         auto len_in_sectors = (item.len_bytes + 2047) / 2048;
         dest.resize(len_in_sectors * 2048);
-        auto* dptr = dest.data();
 
         auto read_result = psxFs_ReadSectorData2048(dest.data(), item.start_sector, len_in_sectors);
         dbg_check(read_result);
@@ -349,3 +340,11 @@ bool psxFs_LoadExecutableHeader(const char* path, PSX_EXE_HEADER& dest) {
 
     return 0;
 }
+
+#if HLE_DUCKSTATION_IFC
+void psxFs_SetMediaFilename(std::string fullpath) {
+    
+    ds_cdimage = CDImage::Open(fullpath.c_str(), nullptr);
+    psxFs_CacheFilesystem();
+}
+#endif
