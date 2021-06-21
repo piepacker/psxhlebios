@@ -1,25 +1,11 @@
 
 #include "psxhle-emu-ifc.h"
+#include "icy_assert.h"
 
 #include <cstdint>
 #include <cstdio>
 
 #include "psxhle-emu-ifc-regs.h"
-
-// Pick an unmapped area of PSX memory to treat as soft call return address.
-static const u32 kSoftCallBaseRetAddr = 0x8100'0000;
-
-HleYieldUid MakeYieldCallId(uint32_t biosCallPage, uint32_t biosCallId)
-{
-    dbg_check((biosCallPage & 15) == 0);
-    dbg_check(biosCallPage < 0xf0);
-    dbg_check(biosCallId <= 0xff);
-
-    // page is stored in the lower 8 bits since we need the lower 4 bits to be 0 anyway.
-    // and page is always A0/B0/C0 so it satisfies this criteria.
-
-    return (biosCallId << 8) | biosCallPage;
-}
 
 // Proper SoftCall:
 //  * save the current value of $ra onto the stack.
@@ -72,14 +58,6 @@ static void HleCallResume() {
     StackPop(ra);
 }
 
-static bool IsHlePC(u32 pc) {
-    return ((pc & 0xff00'0000) == kSoftCallBaseRetAddr);
-}
-
-static HleYieldUid HleGetCallId(u32 pc) {
-    return (HleYieldUid)(pc & ~kSoftCallBaseRetAddr);
-}
-
 static bool HleYieldCheck(HleYieldUid id) {
     auto pc = pc0;
     if (IsHlePC(pc)) {
@@ -88,3 +66,24 @@ static bool HleYieldCheck(HleYieldUid id) {
     }
     return 1;
 }
+
+#if 0
+static void HLEcb_DeliverEvent_Resume() {
+    dbg_check (HleYieldCheck(SCRI_DeliverEvent_Resume));
+    softCallResume();
+    pc0 = ra;
+}
+
+static SoftCallReturnId DeliverEventYield(u32 ev, u32 spec) {
+    if (EventCB[ev][spec].status != EvStACTIVE) return SCRI_None;
+
+//	EventCB[ev][spec].status = EvStALREADY;
+    if (EventCB[ev][spec].mode == EvMdINTR) {
+        return softCallYield(SCRI_DeliverEvent_Resume, EventCB[ev][spec].fhandler);
+    }
+    else {
+        EventCB[ev][spec].status = EvStALREADY;
+        return SCRI_None;
+    }
+}
+#endif

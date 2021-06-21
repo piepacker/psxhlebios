@@ -20,9 +20,15 @@
 #ifndef __LIBPSXHLE_H__
 #define __LIBPSXHLE_H__
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+int32_t psxbios_invoke_A0(void);
+int32_t psxbios_invoke_B0(void);
+int32_t psxbios_invoke_C0(void);
 
 extern void (*psxHLEt[256])();
 

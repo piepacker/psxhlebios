@@ -376,26 +376,9 @@ static FileDesc FDesc[32];
 
 uint8_t hleSoftCall = 0;
 
-#if HLE_ENABLE_EVENT
-static void HLEcb_DeliverEvent_Resume() {
-    dbg_check (HleYieldCheck(SCRI_DeliverEvent_Resume));
-    softCallResume();
-    pc0 = ra;
-}
-
-static SoftCallReturnId DeliverEventYield(u32 ev, u32 spec) {
-    if (EventCB[ev][spec].status != EvStACTIVE) return SCRI_None;
-
-//	EventCB[ev][spec].status = EvStALREADY;
-    if (EventCB[ev][spec].mode == EvMdINTR) {
-        return softCallYield(SCRI_DeliverEvent_Resume, EventCB[ev][spec].fhandler);
-    }
-    else {
-        EventCB[ev][spec].status = EvStALREADY;
-        return SCRI_None;
-    }
-}
-#endif
+// its really helpful to be able to change the call signature of all these functions at once.
+#define HLE_BIOS_CALL_ARGS HleYieldUid huid
+#define HLE_BIOS_INVOKE_ARGS huid
 
 #if HLE_PCSX_IFC
 static inline void softCall(u32 pc) {
@@ -432,7 +415,7 @@ static inline void DeliverEvent(u32 ev, u32 spec) {
 }
 #endif
 
-void psxBios_todigit(void) // 0x0a
+void psxBios_todigit(HLE_BIOS_CALL_ARGS) // 0x0a
 {
     int c = a0;
 
@@ -459,17 +442,17 @@ void psxBios_todigit(void) // 0x0a
     pc0 = ra;
 }
 
-void psxBios_abs() { // 0x0e
+void psxBios_abs(HLE_BIOS_CALL_ARGS) { // 0x0e
     if ((s32)a0 < 0) v0 = -(s32)a0;
     else v0 = a0;
     pc0 = ra;
 }
 
-void psxBios_labs() { // 0x0f
-    psxBios_abs();
+void psxBios_labs(HLE_BIOS_CALL_ARGS) { // 0x0f
+    psxBios_abs(HLE_BIOS_INVOKE_ARGS);
 }
 
-void psxBios_atoi() { // 0x10
+void psxBios_atoi(HLE_BIOS_CALL_ARGS) { // 0x10
     s32 n = 0, f = 0;
     char *p = (char *)Ra0;
 
@@ -490,11 +473,11 @@ void psxBios_atoi() { // 0x10
     pc0 = ra;
 }
 
-void psxBios_atol() { // 0x11
-    psxBios_atoi();
+void psxBios_atol(HLE_BIOS_CALL_ARGS) { // 0x11
+    psxBios_atoi(HLE_BIOS_INVOKE_ARGS);
 }
 
-void psxBios_setjmp() { // 0x13
+void psxBios_setjmp(HLE_BIOS_CALL_ARGS) { // 0x13
     u32 *jmp_buf = (u32 *)Ra0;
     int i;
 
@@ -510,7 +493,7 @@ void psxBios_setjmp() { // 0x13
     v0 = 0; pc0 = ra;
 }
 
-void psxBios_longjmp() { // 0x14
+void psxBios_longjmp(HLE_BIOS_CALL_ARGS) { // 0x14
     u32 *jmp_buf = (u32 *)Ra0;
     int i;
 
@@ -526,7 +509,7 @@ void psxBios_longjmp() { // 0x14
     v0 = a1; pc0 = ra;
 }
 
-void psxBios_strcat() { // 0x15
+void psxBios_strcat(HLE_BIOS_CALL_ARGS) { // 0x15
     char *p1 = (char *)Ra0, *p2 = (char *)Ra1;
 
     PSXBIOS_LOG("psxBios_%s: %s, %s\n", biosA0n[0x15], Ra0, Ra1);
@@ -544,7 +527,7 @@ void psxBios_strcat() { // 0x15
     v0 = a0; pc0 = ra;
 }
 
-void psxBios_strncat() { // 0x16
+void psxBios_strncat(HLE_BIOS_CALL_ARGS) { // 0x16
     char *p1 = (char *)Ra0, *p2 = (char *)Ra1;
     s32 n = a2;
 
@@ -568,7 +551,7 @@ void psxBios_strncat() { // 0x16
     v0 = a0; pc0 = ra;
 }
 
-void psxBios_strcmp() { // 0x17
+void psxBios_strcmp(HLE_BIOS_CALL_ARGS) { // 0x17
     char *p1 = (char *)Ra0, *p2 = (char *)Ra1;
 
     PSXBIOS_LOG("psxBios_%s: %s (%x), %s (%x)\n", biosA0n[0x17], Ra0, a0, Ra1, a1);
@@ -612,7 +595,7 @@ void psxBios_strcmp() { // 0x17
     pc0 = ra;
 }
 
-void psxBios_strncmp() { // 0x18
+void psxBios_strncmp(HLE_BIOS_CALL_ARGS) { // 0x18
 
     PSXBIOS_LOG("psxBios_%s: %s (%x), %s (%x), %d\n", biosA0n[0x18], Ra0, a0, Ra1, a1, a2);
 
@@ -658,7 +641,7 @@ void psxBios_strncmp() { // 0x18
     pc0 = ra;
 }
 
-void psxBios_strcpy() { // 0x19
+void psxBios_strcpy(HLE_BIOS_CALL_ARGS) { // 0x19
     if (!a0 || !a1) {
         v0 = 0;
         pc0 = ra;
@@ -671,7 +654,7 @@ void psxBios_strcpy() { // 0x19
     v0 = a0; pc0 = ra;
 }
 
-void psxBios_strncpy() { // 0x1a
+void psxBios_strncpy(HLE_BIOS_CALL_ARGS) { // 0x1a
     if (!a0 || !a1) {
         v0 = 0;
         pc0 = ra;
@@ -694,7 +677,7 @@ void psxBios_strncpy() { // 0x1a
     v0 = a0; pc0 = ra;
 }
 
-void psxBios_strlen() { // 0x1b
+void psxBios_strlen(HLE_BIOS_CALL_ARGS) { // 0x1b
     if (a0) {
         char *p = Ra0;
         v0 = 0;
@@ -703,7 +686,7 @@ void psxBios_strlen() { // 0x1b
     pc0 = ra;
 }
 
-void psxBios_index() { // 0x1c
+void psxBios_index(HLE_BIOS_CALL_ARGS) { // 0x1c
     if (a0) {
         char *p = Ra0;
 
@@ -719,7 +702,7 @@ void psxBios_index() { // 0x1c
     v0 = 0; pc0 = ra;
 }
 
-void psxBios_rindex() { // 0x1d
+void psxBios_rindex(HLE_BIOS_CALL_ARGS) { // 0x1d
     if (a0) {
         char *p = (char *)Ra0;
 
@@ -734,15 +717,15 @@ void psxBios_rindex() { // 0x1d
     pc0 = ra;
 }
 
-void psxBios_strchr() { // 0x1e
-    psxBios_index();
+void psxBios_strchr(HLE_BIOS_CALL_ARGS) { // 0x1e
+    psxBios_index(HLE_BIOS_INVOKE_ARGS);
 }
 
-void psxBios_strrchr() { // 0x1f
-    psxBios_rindex();
+void psxBios_strrchr(HLE_BIOS_CALL_ARGS) { // 0x1f
+    psxBios_rindex(HLE_BIOS_INVOKE_ARGS);
 }
 
-void psxBios_strpbrk() { // 0x20
+void psxBios_strpbrk(HLE_BIOS_CALL_ARGS) { // 0x20
     char *p1 = (char *)Ra0, *p2 = (char *)Ra1, *scanp, c, sc;
 
     while ((c = *p1++) != '\0') {
@@ -759,7 +742,7 @@ void psxBios_strpbrk() { // 0x20
     v0 = a0; pc0 = ra;
 }
 
-void psxBios_strspn() { // 0x21
+void psxBios_strspn(HLE_BIOS_CALL_ARGS) { // 0x21
     char *p1, *p2;
 
     for (p1 = (char *)Ra0; *p1 != '\0'; p1++) {
@@ -770,7 +753,7 @@ void psxBios_strspn() { // 0x21
     v0 = p1 - (char *)Ra0; pc0 = ra;
 }
 
-void psxBios_strcspn() { // 0x22
+void psxBios_strcspn(HLE_BIOS_CALL_ARGS) { // 0x22
     char *p1, *p2;
 
     for (p1 = (char *)Ra0; *p1 != '\0'; p1++) {
@@ -781,7 +764,7 @@ void psxBios_strcspn() { // 0x22
     v0 = p1 - (char *)Ra0; pc0 = ra;
 }
 
-void psxBios_strtok() { // 0x23
+void psxBios_strtok(HLE_BIOS_CALL_ARGS) { // 0x23
     char *pcA0 = (char *)Ra0;
     char *pcRet = strtok(pcA0, (char *)Ra1);
     if (pcRet)
@@ -791,7 +774,7 @@ void psxBios_strtok() { // 0x23
     pc0 = ra;
 }
 
-void psxBios_strstr() { // 0x24
+void psxBios_strstr(HLE_BIOS_CALL_ARGS) { // 0x24
     char *p = (char *)Ra0, *p1, *p2;
 
     while (*p != '\0') {
@@ -814,19 +797,19 @@ void psxBios_strstr() { // 0x24
     v0 = 0; pc0 = ra;
 }
 
-void psxBios_toupper() { // 0x25
+void psxBios_toupper(HLE_BIOS_CALL_ARGS) { // 0x25
     v0 = (s8)(a0 & 0xff);
     if (v0 >= 'a' && v0 <= 'z') v0 -= 'a' - 'A';
     pc0 = ra;
 }
 
-void psxBios_tolower() { // 0x26
+void psxBios_tolower(HLE_BIOS_CALL_ARGS) { // 0x26
     v0 = (s8)(a0 & 0xff);
     if (v0 >= 'A' && v0 <= 'Z') v0 += 'a' - 'A';
     pc0 = ra;
 }
 
-void psxBios_bcopy() { // 0x27
+void psxBios_bcopy(HLE_BIOS_CALL_ARGS) { // 0x27
     char *p1 = (char *)Ra1, *p2 = (char *)Ra0;
     v0 = a0;
     if (a0 == 0 || a2 > 0x7FFFFFFF)
@@ -839,7 +822,7 @@ void psxBios_bcopy() { // 0x27
     pc0 = ra;
 }
 
-void psxBios_bzero() { // 0x28
+void psxBios_bzero(HLE_BIOS_CALL_ARGS) { // 0x28
     char *p = (char *)Ra0;
     v0 = a0;
     /* Same as memset here (See memset below) */
@@ -860,7 +843,7 @@ void psxBios_bzero() { // 0x28
     pc0 = ra;
 }
 
-void psxBios_bcmp() { // 0x29
+void psxBios_bcmp(HLE_BIOS_CALL_ARGS) { // 0x29
     char *p1 = (char *)Ra0, *p2 = (char *)Ra1;
 
     if (a0 == 0 || a1 == 0) { v0 = 0; pc0 = ra; return; }
@@ -876,7 +859,7 @@ void psxBios_bcmp() { // 0x29
     v0 = 0; pc0 = ra;
 }
 
-void psxBios_memcpy() { // 0x2a
+void psxBios_memcpy(HLE_BIOS_CALL_ARGS) { // 0x2a
     char *p1 = (char *)Ra0, *p2 = (char *)Ra1;
     v0 = a0;
     if (a0 == 0 || a2 > 0x7FFFFFFF)
@@ -891,7 +874,7 @@ void psxBios_memcpy() { // 0x2a
     pc0 = ra;
 }
 
-void psxBios_memset() { // 0x2b
+void psxBios_memset(HLE_BIOS_CALL_ARGS) { // 0x2b
     v0 = a0;
     if (a2 > 0x7FFFFFFF || a2 == 0)
     {
@@ -912,7 +895,7 @@ void psxBios_memset() { // 0x2b
     v0 = a0; pc0 = ra;
 }
 
-void psxBios_memmove() { // 0x2c
+void psxBios_memmove(HLE_BIOS_CALL_ARGS) { // 0x2c
     char *p1 = (char *)Ra0, *p2 = (char *)Ra1;
 
     v0 = a0;
@@ -934,11 +917,11 @@ void psxBios_memmove() { // 0x2c
     pc0 = ra;
 }
 
-void psxBios_memcmp() { // 0x2d
-    psxBios_bcmp();
+void psxBios_memcmp(HLE_BIOS_CALL_ARGS) { // 0x2d
+    psxBios_bcmp(HLE_BIOS_INVOKE_ARGS);
 }
 
-void psxBios_memchr() { // 0x2e
+void psxBios_memchr(HLE_BIOS_CALL_ARGS) { // 0x2e
     char *p = (char *)Ra0;
 
     if (a0 == 0 || a2 > 0x7FFFFFFF)
@@ -957,14 +940,14 @@ void psxBios_memchr() { // 0x2e
     v0 = 0; pc0 = ra;
 }
 
-void psxBios_rand() { // 0x2f
+void psxBios_rand(HLE_BIOS_CALL_ARGS) { // 0x2f
     u32 s = psxMu32(0x9010) * 1103515245 + 12345;
     v0 = (s >> 16) & 0x7fff;
     StoreToLE(psxMu32ref(0x9010), s);
     pc0 = ra;
 }
 
-void psxBios_srand() { // 0x30
+void psxBios_srand(HLE_BIOS_CALL_ARGS) { // 0x30
     StoreToLE(psxMu32ref(0x9010), a0);
     pc0 = ra;
 }
@@ -1067,7 +1050,7 @@ loop:
     }
 }
 
-void psxBios_qsort() { // 0x31
+void psxBios_qsort(HLE_BIOS_CALL_ARGS) { // 0x31
     qswidth = a2;
     qscmpfunc = a3;
     qsort_main((char *)Ra0, (char *)Ra0 + a1 * a2);
@@ -1076,7 +1059,7 @@ void psxBios_qsort() { // 0x31
 }
 
 #if HLE_ENABLE_HEAP
-void psxBios_malloc() { // 0x33
+void psxBios_malloc(HLE_BIOS_CALL_ARGS) { // 0x33
     unsigned int *chunk, *newchunk = NULL;
     unsigned int dsize = 0, csize, cstat;
     int colflag;
@@ -1179,7 +1162,7 @@ void psxBios_malloc() { // 0x33
     pc0 = ra;
 }
 
-void psxBios_free() { // 0x34
+void psxBios_free(HLE_BIOS_CALL_ARGS) { // 0x34
 
     PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x34]);
 
@@ -1191,18 +1174,18 @@ void psxBios_free() { // 0x34
     pc0 = ra;
 }
 
-void psxBios_calloc() { // 0x37
+void psxBios_calloc(HLE_BIOS_CALL_ARGS) { // 0x37
     void *pv0;
     PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x37]);
 
     a0 = a0 * a1;
-    psxBios_malloc();
+    psxBios_malloc(HLE_BIOS_INVOKE_ARGS);
     pv0 = Rv0;
     if (pv0)
         memset(pv0, 0, a0);
 }
 
-void psxBios_realloc() { // 0x38
+void psxBios_realloc(HLE_BIOS_CALL_ARGS) { // 0x38
     u32 block = a0;
     u32 size = a1;
 
@@ -1212,26 +1195,26 @@ void psxBios_realloc() { // 0x38
     /* If "old_buf" is zero, executes malloc(new_size), and returns r2=new_buf (or 0=failed). */
     if (block == 0)
     {
-        psxBios_malloc();
+        psxBios_malloc(HLE_BIOS_INVOKE_ARGS);
     }
     /* Else, if "new_size" is zero, executes free(old_buf), and returns r2=garbage. */
     else if (size == 0)
     {
-        psxBios_free();
+        psxBios_free(HLE_BIOS_INVOKE_ARGS);
     }
     /* Else, executes malloc(new_size), bcopy(old_buf,new_buf,new_size), and free(old_buf), and returns r2=new_buf (or 0=failed). */
     /* Note that it is not quite implemented this way here. */
     else
     {
-        psxBios_free();
+        psxBios_free(HLE_BIOS_INVOKE_ARGS);
         a0 = size;
-        psxBios_malloc();
+        psxBios_malloc(HLE_BIOS_INVOKE_ARGS);
     }
 }
 
 
 /* InitHeap(void *block , int n) */
-void psxBios_InitHeap() { // 0x39
+void psxBios_InitHeap(HLE_BIOS_CALL_ARGS) { // 0x39
     unsigned int size;
 
     PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x39]);
@@ -1298,25 +1281,25 @@ static void raw_puts(const char* cstr) {
     }
 }
 
-void psxBios_getchar() { //0x3b
+void psxBios_getchar(HLE_BIOS_CALL_ARGS) { //0x3b
     PSXBIOS_LOG_SPAM("getchar");
     v0 = getchar();
     pc0 = ra;
 }
 
-void psxBios_putchar() { // 3d
+void psxBios_putchar(HLE_BIOS_CALL_ARGS) { // 3d
     PSXBIOS_LOG_SPAM("putchar");
     raw_putc(a0);
     pc0 = ra;
 }
 
-void psxBios_puts() { // 3e/3f
+void psxBios_puts(HLE_BIOS_CALL_ARGS) { // 3e/3f
     PSXBIOS_LOG_SPAM("puts");
     raw_puts(Ra0);
     pc0 = ra;
 }
 
-void psxBios_printf() { // 0x3f
+void psxBios_printf(HLE_BIOS_CALL_ARGS) { // 0x3f
     PSXBIOS_LOG_NEW("printf");
     const int t2len = 64;
     char tmp2[t2len];
@@ -1418,7 +1401,7 @@ _start:
 }
 
 #if HLE_PCSX_IFC
-void psxBios_format() { // 0x41
+void psxBios_format(HLE_BIOS_CALL_ARGS) { // 0x41
     PSXBIOS_LOG_NEW("format");
     if (strcmp(Ra0, "bu00:") == 0 && Config.Mcd1[0] != '\0')
     {
@@ -1444,7 +1427,7 @@ void psxBios_format() { // 0x41
  *	int Exec(struct EXEC *header , int argc , char **argv);
  */
 
-void psxBios_Exec() { // 43
+void psxBios_Exec(HLE_BIOS_CALL_ARGS) { // 43
     auto header = (EXEC_DESCRIPTOR*)Ra0;
     u32 tmp;
 
@@ -1481,7 +1464,7 @@ extern psdisc_sec_t psxFs_GetFileSector(const char* path);
 extern intmax_t     psxFs_GetFileSize(const char* path);
 extern bool         psxFs_ReadSectorData2048(void* dest,  psdisc_sec_t sector, int nSectors=1);
 
-void psxBios_Load() { // 0x42
+void psxBios_Load(HLE_BIOS_CALL_ARGS) { // 0x42
     PSXBIOS_LOG("psxBios_%s: %s, %x\n", biosA0n[0x42], Ra0, a1);
 
     static_assert((sizeof(EXEC_DESCRIPTOR) + sizeof(PSX_EXE_HEADER)) == 76);
@@ -1514,7 +1497,7 @@ void psxBios_Load() { // 0x42
     pc0 = ra;
 }
 
-void psxBios_LoadExec() { // 51
+void psxBios_LoadExec(HLE_BIOS_CALL_ARGS) { // 51
     auto header = (EXEC_DESCRIPTOR*)PSXM(0xf000);
     u32 s_addr, s_size;
 
@@ -1522,17 +1505,17 @@ void psxBios_LoadExec() { // 51
     s_addr = a1; s_size = a2;
 
     a1 = 0xf000;	
-    psxBios_Load();
+    psxBios_Load(HLE_BIOS_INVOKE_ARGS);
 
     header->s_addr = s_addr;
     header->s_size = s_size;
 
     a0 = 0xf000; a1 = 0; a2 = 0;
-    psxBios_Exec();
+    psxBios_Exec(HLE_BIOS_INVOKE_ARGS);
 }
 #endif
 
-void psxBios_FlushCache() { // 44
+void psxBios_FlushCache(HLE_BIOS_CALL_ARGS) { // 44
     PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x44]);
 
     pc0 = ra;
@@ -1564,7 +1547,7 @@ void psxBios_FlushCache() { // 44
 #endif
 
 #if HLE_ENABLE_GPU
-void psxBios_GPU_dw() { // 0x46
+void psxBios_GPU_dw(HLE_BIOS_CALL_ARGS) { // 0x46
     int size;
     s32 *ptr;
 
@@ -1583,7 +1566,7 @@ void psxBios_GPU_dw() { // 0x46
     pc0 = ra;
 }  
 
-void psxBios_mem2vram() { // 0x47
+void psxBios_mem2vram(HLE_BIOS_CALL_ARGS) { // 0x47
     int size;
 
     GPU_W_DATA(0xa0000000);
@@ -1601,18 +1584,18 @@ void psxBios_mem2vram() { // 0x47
     pc0 = ra;
 }
 
-void psxBios_SendGPU() { // 0x48
+void psxBios_SendGPU(HLE_BIOS_CALL_ARGS) { // 0x48
     GPU_W_STATUS(a0);
     //gpuSyncPluginSR();
     pc0 = ra;
 }
 
-void psxBios_GPU_cw() { // 0x49
+void psxBios_GPU_cw(HLE_BIOS_CALL_ARGS) { // 0x49
     GPU_W_DATA(a0);
     pc0 = ra;
 }
 
-void psxBios_GPU_cwb() { // 0x4a
+void psxBios_GPU_cwb(HLE_BIOS_CALL_ARGS) { // 0x4a
     s32 *ptr = (s32*)Ra0;
     int size = a1;
     while(size--) {
@@ -1623,7 +1606,7 @@ void psxBios_GPU_cwb() { // 0x4a
     pc0 = ra;
 }
    
-void psxBios_GPU_SendPackets() { //4b:	
+void psxBios_GPU_SendPackets(HLE_BIOS_CALL_ARGS) { // 4b	
     GPU_W_STATUS(0x04000002);
     DMA_W(0x1f8010f4, 0);
     DMA_W(0x1f8010f0, DMA_R(0x1f8010f0)|0x800);
@@ -1633,7 +1616,7 @@ void psxBios_GPU_SendPackets() { //4b:
     pc0 = ra;
 }
 
-void psxBios_sys_a0_4c() { // 0x4c GPU relate
+void psxBios_sys_a0_4c(HLE_BIOS_CALL_ARGS) { // 0x4c GPU relate
     DMA_W(0x1f8010a8,0x00000401);
     GPU_W_DATA(0x0400000);
     GPU_W_DATA(0x0200000);
@@ -1643,21 +1626,21 @@ void psxBios_sys_a0_4c() { // 0x4c GPU relate
     pc0 = ra;
 }
 
-void psxBios_GPU_GetGPUStatus() { // 0x4d
+void psxBios_GPU_GetGPUStatus(HLE_BIOS_CALL_ARGS) { // 0x4d
     v0 = GPU_R_STATUS();
     pc0 = ra;
 }
 #endif
 
 /* TODO FIXME : Not compliant. -1 indicates failure but using 1 for now. */
-void psxBios_get_cd_status(void) //a6
+void psxBios_get_cd_status(HLE_BIOS_CALL_ARGS) //a6
 {
     v0 = 1;
     pc0 = ra;
 }
 
 #if HLE_ENABLE_EVENT
-void psxBios__bu_init(YieldCallId id) { // 70
+void psxBios__bu_init(HLE_BIOS_CALL_ARGS) { // 70
     PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x70]);
 
 #if HLE_ENABLE_YIELD
@@ -1679,19 +1662,19 @@ void psxBios__bu_init(YieldCallId id) { // 70
 }
 #endif
 
-void psxBios__96_init() { // 71
+void psxBios__96_init(HLE_BIOS_CALL_ARGS) { // 71
     PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x71]);
 
     pc0 = ra;
 }
 
-void psxBios__96_remove() { // 72
+void psxBios__96_remove(HLE_BIOS_CALL_ARGS) { // 72
     PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x72]);
 
     pc0 = ra;
 }
 
-void psxBios_SetMem() { // 9f
+void psxBios_SetMem(HLE_BIOS_CALL_ARGS) { // 9f
     u32 nx = psxHu32(0x1060);
 
     PSXBIOS_LOG("psxBios_%s: %x, %x\n", biosA0n[0x9f], a0, a1);
@@ -1717,7 +1700,7 @@ void psxBios_SetMem() { // 9f
 }
 
 
-void psxBios__card_info() { // ab
+void psxBios__card_info(HLE_BIOS_CALL_ARGS) { // ab
     PSXBIOS_LOG("psxBios_%s: %x\n", biosA0n[0xab], a0);
 
     u32 ret, port;
@@ -1746,7 +1729,7 @@ void psxBios__card_info() { // ab
     v0 = 1; pc0 = ra;
 }
 
-void psxBios__card_load() { // ac
+void psxBios__card_load(HLE_BIOS_CALL_ARGS) { // ac
     PSXBIOS_LOG("psxBios_%s: %x\n", biosA0n[0xac], a0);
 
     card_active_chan = a0;
@@ -1760,7 +1743,7 @@ void psxBios__card_load() { // ac
 /* System calls B0 */
 
 #if HLE_ENABLE_RCNT
-void psxBios_SetRCnt() { // 02
+void psxBios_SetRCnt(HLE_BIOS_CALL_ARGS) { // 02
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x02]);
 
     a0&= 0x3;
@@ -1779,7 +1762,7 @@ void psxBios_SetRCnt() { // 02
     pc0 = ra;
 }
 
-void psxBios_GetRCnt() { // 03
+void psxBios_GetRCnt(HLE_BIOS_CALL_ARGS) { // 03
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x03]);
 
     a0&= 0x3;
@@ -1788,7 +1771,7 @@ void psxBios_GetRCnt() { // 03
     pc0 = ra;
 }
 
-void psxBios_StartRCnt() { // 04
+void psxBios_StartRCnt(HLE_BIOS_CALL_ARGS) { // 04
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x04]);
 
     a0&= 0x3;
@@ -1802,7 +1785,7 @@ void psxBios_StartRCnt() { // 04
     pc0 = ra;
 }
 
-void psxBios_StopRCnt() { // 05
+void psxBios_StopRCnt(HLE_BIOS_CALL_ARGS) { // 05
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x05]);
 
     a0&= 0x3;
@@ -1815,7 +1798,7 @@ void psxBios_StopRCnt() { // 05
     pc0 = ra;
 }
 
-void psxBios_ResetRCnt() { // 06
+void psxBios_ResetRCnt(HLE_BIOS_CALL_ARGS) { // 06
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x06]);
 
     a0&= 0x3;
@@ -1827,7 +1810,7 @@ void psxBios_ResetRCnt() { // 06
     pc0 = ra;
 }
 
-void psxBios_ChangeClearRCnt() { // 0a
+void psxBios_ChangeClearRCnt(HLE_BIOS_CALL_ARGS) { // 0a
     u32 *ptr;
 
     PSXBIOS_LOG("psxBios_%s: %x, %x\n", biosC0n[0x0a], a0, a1);
@@ -1860,7 +1843,7 @@ void psxBios_ChangeClearRCnt() { // 0a
             break; \
     }
 
-void psxBios_DeliverEvent() { // 07
+void psxBios_DeliverEvent(HLE_BIOS_CALL_ARGS) { // 07
     int ev, spec;
     int i;
 
@@ -1874,7 +1857,7 @@ void psxBios_DeliverEvent() { // 07
     pc0 = ra;
 }
 
-void psxBios_OpenEvent() { // 08
+void psxBios_OpenEvent(HLE_BIOS_CALL_ARGS) { // 08
     int ev, spec;
     int i;
 
@@ -1891,7 +1874,7 @@ void psxBios_OpenEvent() { // 08
     pc0 = ra;
 }
 
-void psxBios_CloseEvent() { // 09
+void psxBios_CloseEvent(HLE_BIOS_CALL_ARGS) { // 09
     int ev, spec;
 
     ev   = a0 & 0xff;
@@ -1904,7 +1887,7 @@ void psxBios_CloseEvent() { // 09
     v0 = 1; pc0 = ra;
 }
 
-void psxBios_WaitEvent() { // 0a
+void psxBios_WaitEvent(HLE_BIOS_CALL_ARGS) { // 0a
     int ev, spec;
 
     ev   = a0 & 0xff;
@@ -1935,7 +1918,7 @@ void psxBios_WaitEvent() { // 0a
     v0 = 0;
 }
 
-void psxBios_TestEvent() { // 0b
+void psxBios_TestEvent(HLE_BIOS_CALL_ARGS) { // 0b
     int ev, spec;
 
     ev   = a0 & 0xff;
@@ -1958,7 +1941,7 @@ void psxBios_TestEvent() { // 0b
     pc0 = ra;
 }
 
-void psxBios_EnableEvent() { // 0c
+void psxBios_EnableEvent(HLE_BIOS_CALL_ARGS) { // 0c
     int ev, spec;
 
     ev   = a0 & 0xff;
@@ -1971,7 +1954,7 @@ void psxBios_EnableEvent() { // 0c
     v0 = 1; pc0 = ra;
 }
 
-void psxBios_DisableEvent() { // 0d
+void psxBios_DisableEvent(HLE_BIOS_CALL_ARGS) { // 0d
     int ev, spec;
 
     ev   = a0 & 0xff;
@@ -1990,7 +1973,7 @@ void psxBios_DisableEvent() { // 0d
  *	long OpenTh(long (*func)(), unsigned long sp, unsigned long gp);
  */
 
-void psxBios_OpenTh() { // 0e
+void psxBios_OpenTh(HLE_BIOS_CALL_ARGS) { // 0e
     int th;
 
     for (th=1; th<8; th++) {
@@ -2019,7 +2002,7 @@ void psxBios_OpenTh() { // 0e
  *	int CloseTh(long thread);
  */
 
-void psxBios_CloseTh() { // 0f
+void psxBios_CloseTh(HLE_BIOS_CALL_ARGS) { // 0f
     int th = a0 & 0xff;
 
     PSXBIOS_LOG("psxBios_%s: %x\n", biosB0n[0x0f], th);
@@ -2039,7 +2022,7 @@ void psxBios_CloseTh() { // 0f
  *	int ChangeTh(long thread);
  */
 
-void psxBios_ChangeTh() { // 10
+void psxBios_ChangeTh(HLE_BIOS_CALL_ARGS) { // 10
     int th = a0 & 0xff;
     PSXBIOS_LOG("psxBios_%s: %x\n", biosB0n[0x10], th);
 
@@ -2068,7 +2051,7 @@ void psxBios_ChangeTh() { // 10
 #endif
 
 #if HLE_ENABLE_PAD
-void psxBios_InitPAD() { // 0x12
+void psxBios_InitPAD(HLE_BIOS_CALL_ARGS) { // 0x12
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x12]);
 
     pad_buf1 = (char*)Ra0;
@@ -2079,7 +2062,7 @@ void psxBios_InitPAD() { // 0x12
     v0 = 1; pc0 = ra;
 }
 
-void psxBios_StartPAD() { // 13
+void psxBios_StartPAD(HLE_BIOS_CALL_ARGS) { // 13
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x13]);
 
     pad_stopped = 0;
@@ -2088,7 +2071,7 @@ void psxBios_StartPAD() { // 13
     pc0 = ra;
 }
 
-void psxBios_StopPAD() { // 14
+void psxBios_StopPAD(HLE_BIOS_CALL_ARGS) { // 14
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x14]);
 
     pad_stopped = 1;
@@ -2097,7 +2080,7 @@ void psxBios_StopPAD() { // 14
     pc0 = ra;
 }
 
-void psxBios_PAD_init() { // 15
+void psxBios_PAD_init(HLE_BIOS_CALL_ARGS) { // 15
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x15]);
 
     if (!(a0 == 0x20000000 || a0 == 0x20000001))
@@ -2115,13 +2098,13 @@ void psxBios_PAD_init() { // 15
     pc0 = ra;
 }
 
-void psxBios_PAD_dr() { // 16
+void psxBios_PAD_dr(HLE_BIOS_CALL_ARGS) { // 16
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x16]);
 
     v0 = -1; pc0 = ra;
 }
 
-void psxBios_ChangeClearPad() { // 5b
+void psxBios_ChangeClearPad(HLE_BIOS_CALL_ARGS) { // 5b
     PSXBIOS_LOG("psxBios_%s: %x\n", biosB0n[0x5b], a0);
 
     pc0 = ra;
@@ -2156,7 +2139,7 @@ static inline void LoadRegs() {
 #endif
 }
 
-void psxBios_ReturnFromException() { // 17
+void psxBios_ReturnFromException(HLE_BIOS_CALL_ARGS) { // 17
     PSXBIOS_LOG_SPAM("ReturnFromException", "DSlot=%d EPC=%08x\n", ((CP0_CAUSE >> 31) & 1), CP0_EPC);
 
     LoadRegs();
@@ -2172,14 +2155,14 @@ void psxBios_ReturnFromException() { // 17
 #endif
 }
 
-void psxBios_ResetEntryInt() { // 18
+void psxBios_ResetEntryInt(HLE_BIOS_CALL_ARGS) { // 18
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x18]);
 
     jmp_int = 0;
     pc0 = ra;
 }
 
-void psxBios_HookEntryInt() { // 19
+void psxBios_HookEntryInt(HLE_BIOS_CALL_ARGS) { // 19
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x19]);
 
     jmp_int = a0;
@@ -2188,7 +2171,7 @@ void psxBios_HookEntryInt() { // 19
 #endif
 
 #if HLE_ENABLE_EVENT
-void psxBios_UnDeliverEvent() { // 0x20
+void psxBios_UnDeliverEvent(HLE_BIOS_CALL_ARGS) { // 0x20
     int ev, spec;
     int i;
 
@@ -2310,7 +2293,7 @@ static void buopen(int mcd, char *ptr, char *cfg)
 /* For some strange reason, the returned character is sign-expanded; */
 /* So if a return value of FFFFFFFFh could mean either character FFh, or error. */
 /* TODO FIX ME : Properly implement this behaviour */
-void psxBios_getc(void) // 0x03, 0x35
+void psxBios_getc(HLE_BIOS_CALL_ARGS) // 0x03, 0x35
 {
     void *pa1 = Ra1;
 
@@ -2329,7 +2312,7 @@ void psxBios_getc(void) // 0x03, 0x35
 }
 
 /* Copy of psxBios_write, except size is 1. */
-void psxBios_putc(void) // 0x09, 0x3B
+void psxBios_putc(HLE_BIOS_CALL_ARGS) // 0x09, 0x3B
 {
     void *pa1 = Ra1;
 
@@ -2364,7 +2347,7 @@ void psxBios_putc(void) // 0x09, 0x3B
  *	int open(char *name , int mode);
  */
 
-void psxBios_open() { // 0x32
+void psxBios_open(HLE_BIOS_CALL_ARGS) { // 0x32
     auto *pa0 = (char*)Ra0;
 
     PSXBIOS_LOG("psxBios_%s: %s,%x\n", biosB0n[0x32], Ra0, a1);
@@ -2388,7 +2371,7 @@ void psxBios_open() { // 0x32
  *	int lseek(int fd , int offset , int whence);
  */
 
-void psxBios_lseek() { // 0x33
+void psxBios_lseek(HLE_BIOS_CALL_ARGS) { // 0x33
     PSXBIOS_LOG("psxBios_%s: %x, %x, %x\n", biosB0n[0x33], a0, a1, a2);
 
     switch (a2) {
@@ -2412,7 +2395,7 @@ void psxBios_lseek() { // 0x33
  *	int read(int fd , void *buf , int nbytes);
  */
 
-void psxBios_read() { // 0x34
+void psxBios_read(HLE_BIOS_CALL_ARGS) { // 0x34
     void *pa1 = Ra1;
 
     PSXBIOS_LOG("psxBios_%s: %x, %x, %x\n", biosB0n[0x34], a0, a1, a2);
@@ -2433,7 +2416,7 @@ void psxBios_read() { // 0x34
  *	int write(int fd , void *buf , int nbytes);
  */
 
-void psxBios_write() { // 0x35/0x03
+void psxBios_write(HLE_BIOS_CALL_ARGS) { // 0x35/0x03
     auto *pa1 = Ra1;
 
     PSXBIOS_LOG("psxBios_%s: %x,%x,%x\n", biosB0n[0x35], a0, a1, a2);
@@ -2466,7 +2449,7 @@ void psxBios_write() { // 0x35/0x03
  *	int close(int fd);
  */
 
-void psxBios_close() { // 0x36
+void psxBios_close(HLE_BIOS_CALL_ARGS) { // 0x36
     PSXBIOS_LOG("psxBios_%s: %x\n", biosB0n[0x36], a0);
 
     v0 = a0;
@@ -2525,7 +2508,7 @@ static void bufile(const u8* mcdraw) {
  *	struct DIRENTRY* firstfile(char *name,struct DIRENTRY *dir);
  */
  
-void psxBios_firstfile() { // 42
+void psxBios_firstfile(HLE_BIOS_CALL_ARGS) { // 42
     auto *pa0 = Ra0;
     char *ptr;
     int i;
@@ -2558,7 +2541,7 @@ void psxBios_firstfile() { // 42
  *	struct DIRENTRY* nextfile(struct DIRENTRY *dir);
  */
 
-void psxBios_nextfile() { // 43
+void psxBios_nextfile(HLE_BIOS_CALL_ARGS) { // 43
     struct DIRENTRY *dir = (struct DIRENTRY *)Ra0;
     u32 _dir = a0;
     char *ptr;
@@ -2600,7 +2583,7 @@ void psxBios_nextfile() { // 43
  *	int rename(char *old, char *new);
  */
 
-void psxBios_rename() { // 44
+void psxBios_rename(HLE_BIOS_CALL_ARGS) { // 44
     void *pa0 = Ra0;
     void *pa1 = Ra1;
     char *ptr;
@@ -2641,7 +2624,7 @@ void psxBios_rename() { // 44
  *	int delete(char *name);
  */
 
-void psxBios_delete() { // 45
+void psxBios_delete(HLE_BIOS_CALL_ARGS) { // 45
     void *pa0 = Ra0;
     char *ptr;
     int i;
@@ -2666,7 +2649,7 @@ void psxBios_delete() { // 45
 #endif // HLE_ENABLE_FILEIO
 
 #if HLE_ENABLE_MCD
-void psxBios_InitCARD() { // 4a
+void psxBios_InitCARD(HLE_BIOS_CALL_ARGS) { // 4a
     PSXBIOS_LOG("psxBios_%s: %x\n", biosB0n[0x4a], a0);
 
     CardState = 0;
@@ -2674,7 +2657,7 @@ void psxBios_InitCARD() { // 4a
     pc0 = ra;
 }
 
-void psxBios_StartCARD() { // 4b
+void psxBios_StartCARD(HLE_BIOS_CALL_ARGS) { // 4b
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x4b]);
 
     if (CardState == 0) CardState = 1;
@@ -2682,7 +2665,7 @@ void psxBios_StartCARD() { // 4b
     pc0 = ra;
 }
 
-void psxBios_StopCARD() { // 4c
+void psxBios_StopCARD(HLE_BIOS_CALL_ARGS) { // 4c
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x4c]);
 
     if (CardState == 1) CardState = 0;
@@ -2690,7 +2673,7 @@ void psxBios_StopCARD() { // 4c
     pc0 = ra;
 }
 
-void psxBios__card_write() { // 0x4e
+void psxBios__card_write(HLE_BIOS_CALL_ARGS) { // 0x4e
     void *pa2 = Ra2;
     int port;
 
@@ -2724,7 +2707,7 @@ void psxBios__card_write() { // 0x4e
     v0 = 1; pc0 = ra;
 }
 
-void psxBios__card_read() { // 0x4f
+void psxBios__card_read(HLE_BIOS_CALL_ARGS) { // 0x4f
     void *pa2 = Ra2;
     int port;
 
@@ -2757,14 +2740,14 @@ void psxBios__card_read() { // 0x4f
     v0 = 1; pc0 = ra;
 }
 
-void psxBios__new_card() { // 0x50
+void psxBios__new_card(HLE_BIOS_CALL_ARGS) { // 0x50
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x50]);
 
     pc0 = ra;
 }
 
 /* According to a user, this allows Final Fantasy Tactics to save/load properly */
-void psxBios__get_error(void) // 55
+void psxBios__get_error(HLE_BIOS_CALL_ARGS) // 55
 {
     v0 = 0;
     pc0 = ra;
@@ -2772,7 +2755,7 @@ void psxBios__get_error(void) // 55
 
 #endif
 
-void psxBios_Krom2RawAdd() { // 0x51
+void psxBios_Krom2RawAdd(HLE_BIOS_CALL_ARGS) { // 0x51
     int i = 0;
 
     const u32 table_8140[][2] = {
@@ -2815,34 +2798,34 @@ void psxBios_Krom2RawAdd() { // 0x51
     pc0 = ra;
 }
 
-void psxBios_GetC0Table() { // 56
+void psxBios_GetC0Table(HLE_BIOS_CALL_ARGS) { // 56
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x56]);
 
     v0 = 0x674; pc0 = ra;
 }
 
-void psxBios_GetB0Table() { // 57
+void psxBios_GetB0Table(HLE_BIOS_CALL_ARGS) { // 57
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x57]);
 
     v0 = 0x874; pc0 = ra;
 }
 
 #if HLE_ENABLE_MCD
-void psxBios__card_chan() { // 0x58
+void psxBios__card_chan(HLE_BIOS_CALL_ARGS) { // 0x58
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x58]);
 
     v0 = card_active_chan;
     pc0 = ra;
 }
 
-void psxBios__card_status() { // 5c
+void psxBios__card_status(HLE_BIOS_CALL_ARGS) { // 5c
     PSXBIOS_LOG("psxBios_%s: %x\n", biosB0n[0x5c], a0);
 
     v0 = card_active_chan;
     pc0 = ra;
 }
 
-void psxBios__card_wait() { // 5d
+void psxBios__card_wait(HLE_BIOS_CALL_ARGS) { // 5d
     PSXBIOS_LOG("psxBios_%s: %x\n", biosB0n[0x5d], a0);
 
     v0 = 1;
@@ -2858,7 +2841,7 @@ void psxBios__card_wait() { // 5d
  * int SysEnqIntRP(int index , long *queue);
  */
 
-void psxBios_SysEnqIntRP() { // 02
+void psxBios_SysEnqIntRP(HLE_BIOS_CALL_ARGS) { // 02
     PSXBIOS_LOG("psxBios_%s: %x\n", biosC0n[0x02] ,a0);
 
     SysIntRP[a0] = a1;
@@ -2870,7 +2853,7 @@ void psxBios_SysEnqIntRP() { // 02
  * int SysDeqIntRP(int index , long *queue);
  */
 
-void psxBios_SysDeqIntRP() { // 03
+void psxBios_SysDeqIntRP(HLE_BIOS_CALL_ARGS) { // 03
     PSXBIOS_LOG("psxBios_%s: %x\n", biosC0n[0x03], a0);
 
     SysIntRP[a0] = 0;
@@ -2880,43 +2863,25 @@ void psxBios_SysDeqIntRP() { // 03
 #endif
 
 using VoidFnptr = void (*)();
+using HleBiosFnptr = void (*)(HLE_BIOS_CALL_ARGS);
 
-using HLE_BIOS_TABLE = VoidFnptr[256]; 
+using HLE_BIOS_TABLE = HleBiosFnptr[256]; 
 
 HLE_BIOS_TABLE biosA0 = {};
 HLE_BIOS_TABLE biosB0 = {};
 HLE_BIOS_TABLE biosC0 = {};
 
-
-VoidFnptr HLE_Call_Table[SCRI_MAX_COUNT];
-
-void HleInitCallTable() {
-
-    HLE_Call_Table[SCRI_DeliverEvent_Resume     ] = HLEcb_DeliverEvent_Resume;
-    HLE_Call_Table[SCRI_psxBios_DeliverEvent_00 ] = psxBios_DeliverEvent     ;
-    HLE_Call_Table[SCRI_psxBios__bu_init_00     ] = psxBios__bu_init         ;
-    HLE_Call_Table[SCRI_psxBios__bu_init_01     ] = psxBios__bu_init         ;
-    HLE_Call_Table[SCRI_psxBios__bu_init_02     ] = psxBios__bu_init         ;
-    HLE_Call_Table[SCRI_psxBios__card_load_00   ] = psxBios__card_load       ;
-    HLE_Call_Table[SCRI_psxBios__card_info_00   ] = psxBios__card_info       ;
-    HLE_Call_Table[SCRI_psxBios__card_read_00   ] = psxBios__card_read       ;
-    HLE_Call_Table[SCRI_psxBios__card_write_00  ] = psxBios__card_write      ;
-
-};
-
 #include "sjisfont.h"
 
 void psxBiosResetToNone() {
     for(int i = 0; i < 256; i++) {
-        biosA0[i] = NULL;
-        biosB0[i] = NULL;
-        biosC0[i] = NULL;
+        biosA0[i] = nullptr;
+        biosB0[i] = nullptr;
+        biosC0[i] = nullptr;
     }
 }
 
 void psxBiosInit_StdLib() {
-
-    HleInitCallTable();
 
     biosA0[0x3e] = psxBios_puts;
     biosA0[0x3f] = psxBios_printf;
@@ -3825,15 +3790,18 @@ void psxBiosException80() {
 }
 #endif
 
-bool psxbios_invoke_any(const HLE_BIOS_TABLE& table, const char * const names[256]) {
+bool psxbios_invoke_any(u32 callTableId, const HLE_BIOS_TABLE& table, const char * const names[256]) {
     int call = t1 & 0xff;
 
 
     if (table[call]) {
-        table[call]();
+        auto yieldCallId = HleMakeYieldUid(callTableId, call, 0);
+        table[call](yieldCallId);
         return 1;
     }
     else {
+        // a trace for calls that are being made to unimplemented functions.
+        // Traces for implemented functions are handled by the functions, to allow them to add their own clever/useful info.
         if (const char* name = names[call]) {
             auto my_suppress = [name](const char* check) {
                 if (strcmp(name, check)) return false;
@@ -3857,16 +3825,18 @@ bool psxbios_invoke_any(const HLE_BIOS_TABLE& table, const char * const names[25
     return 0;
 }
 
-bool psxbios_invoke_A0() { return psxbios_invoke_any(biosA0, biosA0n); }
-bool psxbios_invoke_B0() { return psxbios_invoke_any(biosB0, biosB0n); }
-bool psxbios_invoke_C0() { return psxbios_invoke_any(biosC0, biosC0n); }
+extern "C" int32_t psxbios_invoke_A0() { return psxbios_invoke_any(0xA0, biosA0, biosA0n); }
+extern "C" int32_t psxbios_invoke_B0() { return psxbios_invoke_any(0xB0, biosB0, biosB0n); }
+extern "C" int32_t psxbios_invoke_C0() { return psxbios_invoke_any(0xC0, biosC0, biosC0n); }
 
-int HleDispatchCall(uint32_t pc) {
+extern "C" int HleDispatchCall(uint32_t pc) {
 
     if (IsHlePC(pc)) {
         auto id = HleGetCallId(pc);
-        dbg_check((u32)id < SCRI_MAX_COUNT);
-        HLE_Call_Table[id]();
+        // TODO: replace this with improved system... (YieldCallId)
+        dbg_abort();
+        //dbg_check((u32)id < SCRI_MAX_COUNT);
+        //HLE_Call_Table[id]();
         return 1;
     }
 

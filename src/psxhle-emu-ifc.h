@@ -221,12 +221,36 @@ static const uint32_t PS1_FastRamEnd		= 0x1f800000 + PS1_FASTRAMSIZE;
 static const uint32_t PS1_BiosRomStart		= 0x1fc00000;
 static const uint32_t PS1_BiosRomEnd		= 0x1fc00000 + PS1_BIOSSIZE;
 
-// HleYieldUid is the A0/B0/C0 value plus the original call ID.
-// This is used as the values come from the games themselves and are therefore fixed and unique
-// for any bios function, and will save us a lot of paperwork for maintaining savestate compat
-// or inventing some new sequence of values.
+// HleYieldUid is a combination of the following traits:
+//  - the BIOS call table thunk address (A0/B0/C0 are standard BIOS thunks), max value 0xffff 
+//  - the BIOS call ID (the thunk uses this to look up the callsite), max value 0xff
+//  - the yield state of the HLE call being invoked (0 = first entry), max value 0xff
+//
+// The original BIOS has thunks at A0/B0/C0. A custom HLE could add pseudo-addresses.
+// The yield state is determined by the yield system API, which auto-increments the yield state at each
+// call to a yield site.
 using HleYieldUid = uint32_t;
 
 HleYieldUid MakeYieldCallId(uint32_t biosCallPage, uint32_t biosCallId);
+
+// Pick an unmapped area of PSX memory to treat as soft call return address.
+static const u32 kSoftCallBaseRetAddr = 0x8100'0000;
+
+static bool IsHlePC(u32 pc) {
+    return ((pc & 0xff00'0000) == kSoftCallBaseRetAddr);
+}
+
+// tableAddress - eg. A0, B0, C0
+static HleYieldUid HleMakeYieldUid(u32 thunkAddr, u32 callIdx, u32 yieldIdx) {
+    dbg_check(thunkAddr <= 0xffff);
+    dbg_check(yieldIdx   <= 0xff);
+    dbg_check(callIdx    <= 0xff);
+
+    return ((thunkAddr << 16) | (callIdx << 8) | yieldIdx);
+}
+
+static HleYieldUid HleGetCallId(u32 pc) {
+    return (HleYieldUid)(pc & ~kSoftCallBaseRetAddr);
+}
 
 #endif

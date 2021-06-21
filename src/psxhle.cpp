@@ -19,6 +19,7 @@
 
 /*
 * Internal PSX HLE functions.
+* This file is almost entirely PCSX-specific for the time being.
 */
 
 #include "libpsxhle.h"
@@ -35,31 +36,21 @@
 
 static void hleDummy() {
     psxRegs.pc = psxRegs.GPR.n.ra;
-
     psxBranchTest();
 }
 
 static void hleA0() {
-    u32 call = psxRegs.GPR.n.t1 & 0xff;
-
-    if (biosA0[call]) biosA0[call]();
-
+    psxbios_invoke_A0();
     psxBranchTest();
 }
 
 static void hleB0() {
-    u32 call = psxRegs.GPR.n.t1 & 0xff;
-
-    if (biosB0[call]) biosB0[call]();
-
+    psxbios_invoke_B0();
     psxBranchTest();
 }
 
 static void hleC0() {
-    u32 call = psxRegs.GPR.n.t1 & 0xff;
-
-    if (biosC0[call]) biosC0[call]();
-
+    psxbios_invoke_C0();
     psxBranchTest();
 }
 

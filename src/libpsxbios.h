@@ -40,10 +40,6 @@ void psxBiosFreeze(int Mode);
 
 int HleDispatchCall(uint32_t pc);
 
-extern void (*biosA0[256])();
-extern void (*biosB0[256])();
-extern void (*biosC0[256])();
-
 extern uint8_t hleSoftCall;
 
 #ifdef __cplusplus
