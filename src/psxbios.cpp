@@ -380,29 +380,14 @@ uint8_t hleSoftCall = 0;
 #define HLE_BIOS_CALL_ARGS HleYieldUid huid
 #define HLE_BIOS_INVOKE_ARGS huid
 
-#if HLE_PCSX_IFC
 static inline void softCall(u32 pc) {
-    pc0 = pc;
-    ra = 0x80001000;
-
-    hleSoftCall = TRUE;
-
-    while (pc0 != 0x80001000) psxCpu->ExecuteBlock();
-
-    hleSoftCall = FALSE;
+    HleExecuteRecursive(pc, 0x80001000);
 }
 
 static inline void softCall2(u32 pc) {
     u32 sra = ra;
-    pc0 = pc;
-    ra = 0x80001000;
-
-    hleSoftCall = TRUE;
-
-    while (pc0 != 0x80001000) psxCpu->ExecuteBlock();
+    HleExecuteRecursive(pc, 0x80001000);
     ra = sra;
-
-    hleSoftCall = FALSE;
 }
 
 static inline void DeliverEvent(u32 ev, u32 spec) {
@@ -413,7 +398,6 @@ static inline void DeliverEvent(u32 ev, u32 spec) {
         softCall2(EventCB[ev][spec].fhandler);
     } else EventCB[ev][spec].status = EvStALREADY;
 }
-#endif
 
 void psxBios_todigit(HLE_BIOS_CALL_ARGS) // 0x0a
 {

@@ -32,6 +32,7 @@
 #if _MSC_VER
 #   pragma warning(disable : 4244)      // this one is just silly.
 #   pragma warning(disable : 4245)      // this is for 64-bit pointer cast to 32 bit int. It would be nice to enable but all the stdlib stuff depends on it for now.
+#   pragma warning(disable : 4389)      // '==': signed/unsigned mismatch
 #   pragma warning(disable : 4505)      // unref'd function removed.
 #endif
 
@@ -175,6 +176,16 @@ static void SetPC(uint32_t newpc) {
     PSX_CPU->BACKED_PC = newpc;
     PSX_CPU->BACKED_new_PC = PSX_CPU->BACKED_PC + 4;
 }
+
+static void HleExecuteRecursive(u32 startPC, u32 returnPC) {
+    pc0 = pc;
+    ra = returnPC;
+
+    hleSoftCall = TRUE;
+    HleExecuteRecursive(startPC, returnPC);
+    while (pc0 != 0x80001000) psxCpu->ExecuteBlock();
+    hleSoftCall = FALSE;
+}
 #endif
 
 #if HLE_DUCKSTATION_IFC
@@ -205,6 +216,18 @@ static u32 Read_IMASK()   { return g_interrupt_controller.ReadRegister(4); }  //
 
 static void SetPC(uint32_t newpc) {
     CPU::SetPC(newpc);
+}
+
+namespace CPU
+{
+namespace CodeCache
+{
+    extern void HleExecuteRecursive(u32 startPC, u32 exitPC);
+}
+}
+
+static void HleExecuteRecursive(u32 startPC, u32 returnPC) {
+    HleExecuteRecursive(startPC, returnPC);
 }
 #endif
 
