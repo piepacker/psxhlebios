@@ -297,13 +297,8 @@ static uint8_t* PSXM(uint32_t unmasked) {
     return PSX_RAM_START + masked;
 }
 
-static uint32_t& psxMu32ref(uint32_t addr) {
-    return (uint32_t&)*PSXM(addr);
-}
-
-static uint32_t psxMu32(uint32_t addr) {
-    return *(uint32_t*)PSXM(addr);
-}
+static uint32_t& psxMu32ref(uint32_t addr) { return  (uint32_t&)*PSXM(addr); }
+static uint32_t  psxMu32   (uint32_t addr) { return  (uint32_t&)*PSXM(addr); }
 
 #define Ra0 ((char *)PSXM(a0))
 #define Ra1 ((char *)PSXM(a1))
@@ -311,6 +306,20 @@ static uint32_t psxMu32(uint32_t addr) {
 #define Ra3 ((char *)PSXM(a3))
 #define Rv0 ((char *)PSXM(v0))
 #define Rsp ((char *)PSXM(sp))
+
+#if HLE_PCSX_IFC
+
+#   undef psxHu32
+#   undef psxHu32ref
+
+static uint32_t& psxHu32ref(uint32_t addr) { return  (uint32_t&) psxH[addr & 0xffff]; }
+static uint32_t  psxHu32   (uint32_t addr) { return  (uint32_t&) psxH[addr & 0xffff]; }
+#endif
+
+#if HLE_DUCKSTATION_IFC
+static uint32_t& psxHu32ref(uint32_t addr) { return  TODO; }
+static uint32_t  psxHu32   (uint32_t addr) { return  TODO; }
+#endif
 
 #if HLE_PCSX_IFC
 
