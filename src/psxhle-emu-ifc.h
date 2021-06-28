@@ -138,6 +138,11 @@ static u32 Read_MEMCTRL2() { return psxHu32(0x1060); }
 static void SetPC(uint32_t newpc) {
     psxRegs.pc = newpc;
 }
+
+static void psxCpuClear(u32 startPC, int size_in_words)
+{
+    psxCpu->Clear(startPC, size_in_words);
+}
 #endif
 
 #if HLE_MEDNAFEN_IFC
