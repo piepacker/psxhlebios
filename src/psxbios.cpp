@@ -55,8 +55,6 @@
 #   include <zlib.h>
 #endif
 
-#include "psxhle-emu-ifc-regs.h"
-
 
 template<typename T, typename T2>
 void StoreToLE(T& dest, const T2& src) {

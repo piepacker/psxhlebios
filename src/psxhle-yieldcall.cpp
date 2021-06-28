@@ -5,8 +5,6 @@
 #include <cstdint>
 #include <cstdio>
 
-#include "psxhle-emu-ifc-regs.h"
-
 // Proper SoftCall:
 //  * save the current value of $ra onto the stack.
 //  * set a special return address that identifies our HLE function and it's current yield state
