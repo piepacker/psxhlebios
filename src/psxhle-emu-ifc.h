@@ -35,6 +35,7 @@
 
 #if HLE_DUCKSTATION_IFC
 #   include "core/cpu_core.h"
+#   include "core/cpu_core_private.h"
 #   include "core/bus.h"
 #   include "core/gpu.h"
 #   include "core/dma.h"
@@ -127,10 +128,12 @@ extern char McdDisable[2];
 #define RCNT_GetMode(rid)           psxRcntRmode  (rid)
 #define RCNT_GetTarget(rid)         psxRcntRtarget(rid)
 
-static void Write_ISTAT(u32 val) { psxHwWrite32(0x1f801070, val); }
-static void Write_IMASK(u32 val) { psxHwWrite32(0x1f801074, val); }
-static u32 Read_ISTAT() { return psxHu32(0x1070); }
-static u32 Read_IMASK() { return psxHu32(0x1074); }
+static void Write_ISTAT(u32 val)    { psxHwWrite32(0x1f801070, val); }
+static void Write_IMASK(u32 val)    { psxHwWrite32(0x1f801074, val); }
+static void Write_MEMCTRL2(u32 val) { psxHwWrite32(0x1f801060, val); }
+static u32 Read_ISTAT()    { return psxHu32(0x1070); }
+static u32 Read_IMASK()    { return psxHu32(0x1074); }
+static u32 Read_MEMCTRL2() { return psxHu32(0x1060); }
 
 static void SetPC(uint32_t newpc) {
     psxRegs.pc = newpc;
@@ -187,6 +190,11 @@ static void HleExecuteRecursive(u32 startPC, u32 returnPC) {
     while (pc0 != 0x80001000) psxCpu->ExecuteBlock();
     hleSoftCall = FALSE;
 }
+
+static void psxCpuClear(u32 startPC, int size_in_words)
+{
+    psxCpu->Clear(startPC, size_in_words);
+}
 #endif
 
 #if HLE_DUCKSTATION_IFC
@@ -215,8 +223,23 @@ static void Write_IMASK(u32 val) { g_interrupt_controller.WriteRegister(4, val);
 static u32 Read_ISTAT()   { return g_interrupt_controller.ReadRegister(0); }  // 1070
 static u32 Read_IMASK()   { return g_interrupt_controller.ReadRegister(4); }  // 1074
 
+namespace Bus {
+    extern void HleWriteMEMCTRL2(u32 val);
+    extern u32 HleReadMEMCTRL2();
+}
+
+
+static void Write_MEMCTRL2(u32 val) { Bus::HleWriteMEMCTRL2(val); }
+static u32 Read_MEMCTRL2() { return Bus::HleReadMEMCTRL2(); }  // 1060
+
 static void SetPC(uint32_t newpc) {
     CPU::SetPC(newpc);
+}
+
+static void psxCpuClear(u32 startPC, int size_in_words)
+{
+    // may need this, tho Duckstation's self-checking should cover all the bases for now.
+    //psxCpu->Clear(startPC, size_in_words);
 }
 
 #endif
@@ -306,20 +329,6 @@ static uint32_t  psxMu32   (uint32_t addr) { return  (uint32_t&)*PSXM(addr); }
 #define Ra3 ((char *)PSXM(a3))
 #define Rv0 ((char *)PSXM(v0))
 #define Rsp ((char *)PSXM(sp))
-
-#if HLE_PCSX_IFC
-
-#   undef psxHu32
-#   undef psxHu32ref
-
-static uint32_t& psxHu32ref(uint32_t addr) { return  (uint32_t&) psxH[addr & 0xffff]; }
-static uint32_t  psxHu32   (uint32_t addr) { return  (uint32_t&) psxH[addr & 0xffff]; }
-#endif
-
-#if HLE_DUCKSTATION_IFC
-static uint32_t& psxHu32ref(uint32_t addr) { return  TODO; }
-static uint32_t  psxHu32   (uint32_t addr) { return  TODO; }
-#endif
 
 #if HLE_PCSX_IFC
 

@@ -1657,19 +1657,19 @@ void psxBios__96_remove(HLE_BIOS_CALL_ARGS) { // 72
 }
 
 void psxBios_SetMem(HLE_BIOS_CALL_ARGS) { // 9f
-    u32 nx = psxHu32(0x1060);
+    u32 nx = Read_MEMCTRL2();
 
     PSXBIOS_LOG("psxBios_%s: %x, %x\n", biosA0n[0x9f], a0, a1);
 
     switch(a0) {
         case 2:
-            StoreToLE(psxHu32ref(0x1060), nx);
+            Write_MEMCTRL2(nx);
             psxMu32ref(0x060) = a0;
             SysPrintf("Change effective memory : %d MBytes\n",a0);
             break;
 
         case 8:
-            StoreToLE(psxHu32ref(0x1060), nx | 0x300);
+            Write_MEMCTRL2(nx | 0x300);
             psxMu32ref(0x060) = a0;
             SysPrintf("Change effective memory : %d MBytes\n",a0);
     
@@ -3373,7 +3373,7 @@ void psxBiosInitFull() {
 
         // memory size 2 MB
         // (mednafen doesn't seem to bother to set this...)
-        //StoreToLE(psxHu32ref(0x1060), 0x00000b88);
+        Write_MEMCTRL2(0x00000b88);
 
 
         /*	Some games like R-Types, CTR, Fade to Black read from adress 0x00000000 due to uninitialized pointers.
@@ -3544,8 +3544,7 @@ void psxBiosLoadExecCdrom() {
             dbg_abort("ReadSectorData failed!");
         }
 
-        // donotcheckin - develop API layer for this.
-        psxCpu->Clear(text_addr, text_size / 4);
+        psxCpuClear(text_addr, text_size / 4);
 
 #if HLE_MEDNAFEN_IFC
         // DUMP! donotcheckin
@@ -3691,7 +3690,7 @@ void psxBiosException80() {
     auto excode = (CP0_CAUSE & 0x3c) >> 2;
     switch (excode) {
         case 0x00: // Interrupt
-            interrupt_r26=psxRegs.CP0.n.EPC;
+            interrupt_r26 = CP0_EPC;
 //			PSXCPU_LOG("interrupt\n");
             SaveRegs();
             sp = psxMu32(0x6c80); // create new stack for interrupt handlers
