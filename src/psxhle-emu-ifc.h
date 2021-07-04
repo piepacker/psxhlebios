@@ -70,16 +70,16 @@
 // Rest of these are not useful due to interdependence on exception handler and full hle.
 
 #define HLE_ENABLE_THREAD       (HLE_FULL || 1)
-#define HLE_ENABLE_MCD			(HLE_FULL || 1) && !HLE_DUCKSTATION_IFC
+
+#ifndef HLE_ENABLE_MCD
+#define HLE_ENABLE_MCD			(HLE_FULL || 1)
+#endif
+
 #define HLE_ENABLE_EVENT        (HLE_FULL || 1)
 #define HLE_ENABLE_LOADEXEC		(HLE_FULL || 1)       // depends on ISO9660 filesystem API
 
-#define HLE_ENABLE_FILEIO		(HLE_PCSX_IFC || (HLE_FULL && 1))       // fileio depends on HLE memcard ?
 #define HLE_ENABLE_PAD			(HLE_PCSX_IFC || (HLE_FULL && 1))
 #define HLE_ENABLE_ENTRYINT     (HLE_PCSX_IFC || (HLE_FULL && 1))
-
-#define HLE_ENABLE_FINDFILE     (0            || (HLE_FULL && 0))
-#define HLE_ENABLE_FORMAT       (0            || (HLE_FULL && 0))
 
 // qsort needs to be rewritten before it can be enabled. And once rewritten, probably can remove
 // the conditional build for it.. no good reason to disable it except right now it doesn't build --jstine

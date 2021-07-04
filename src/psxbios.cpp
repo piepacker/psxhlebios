@@ -1382,7 +1382,7 @@ _start:
     pc0 = ra;
 }
 
-#if HLE_PCSX_IFC
+#if HLE_ENABLE_MCD
 void psxBios_format(HLE_BIOS_CALL_ARGS) { // 0x41
     PSXBIOS_LOG_NEW("format");
     if (strcmp(Ra0, "bu00:") == 0 && Config.Mcd1[0] != '\0')
@@ -1681,7 +1681,7 @@ void psxBios_SetMem(HLE_BIOS_CALL_ARGS) { // 9f
     pc0 = ra;
 }
 
-
+#if HLE_ENABLE_MCD
 void psxBios__card_info(HLE_BIOS_CALL_ARGS) { // ab
     PSXBIOS_LOG("psxBios_%s: %x\n", biosA0n[0xab], a0);
 
@@ -1721,6 +1721,7 @@ void psxBios__card_load(HLE_BIOS_CALL_ARGS) { // ac
 
     v0 = 1; pc0 = ra;
 }
+#endif
 
 /* System calls B0 */
 
@@ -2170,8 +2171,7 @@ void psxBios_UnDeliverEvent(HLE_BIOS_CALL_ARGS) { // 0x20
 }
 #endif
 
-#if HLE_ENABLE_FILEIO
-#if HLE_PCSX_IFC
+#if HLE_ENABLE_MCD
 #define buread(Ra1, mcd, length) { \
     SysPrintf("read %d: %x,%x (%s)\n", FDesc[1 + mcd].mcfile, FDesc[1 + mcd].offset, a2, Mcd##mcd##Data + 128 * FDesc[1 + mcd].mcfile + 0xa); \
     char* ptr = Mcd##mcd##Data + 8192 * FDesc[1 + mcd].mcfile + FDesc[1 + mcd].offset; \
@@ -2197,17 +2197,12 @@ void psxBios_UnDeliverEvent(HLE_BIOS_CALL_ARGS) { // 0x20
     v0 = 0; } \
     else v0 = length; \
 }
-#else
-#define buread(Ra1, mcd, length)   (dbg_check(false))
-#define buwrite(Ra1, mcd, length)  (dbg_check(false))
-#endif
 
 char ffile[64], *pfile;
 int nfile;
 
 static void buopen(int mcd, char *ptr, char *cfg)
 {
-#if HLE_PCSX_IFC
     int i;
     char *mcd_data = ptr;
 
@@ -2268,7 +2263,6 @@ static void buopen(int mcd, char *ptr, char *cfg)
         }
         /* shouldn't this return ENOSPC if i == 16? */
     }
-#endif
 }
 
 /* Internally redirects to "FileRead(fd,tempbuf,1)".*/
@@ -2485,7 +2479,6 @@ static void bufile(const u8* mcdraw) {
     }
 }
 
-#if HLE_ENABLE_FINDFILE
 /*
  *	struct DIRENTRY* firstfile(char *name,struct DIRENTRY *dir);
  */
@@ -2627,10 +2620,7 @@ void psxBios_delete(HLE_BIOS_CALL_ARGS) { // 45
 
     pc0 = ra;
 }
-#endif // HLE_ENABLE_FINDFILE
-#endif // HLE_ENABLE_FILEIO
 
-#if HLE_ENABLE_MCD
 void psxBios_InitCARD(HLE_BIOS_CALL_ARGS) { // 4a
     PSXBIOS_LOG("psxBios_%s: %x\n", biosB0n[0x4a], a0);
 
@@ -2871,7 +2861,7 @@ void psxBiosInit_StdLib() {
     biosB0[0x3d] = psxBios_putchar;
     biosB0[0x3f] = psxBios_puts;
 
-#if HLE_ENABLE_FILEIO
+#if HLE_ENABLE_MCD
     biosA0[0x00] = psxBios_open;
     biosA0[0x01] = psxBios_lseek;
     biosA0[0x02] = psxBios_read;
@@ -3163,7 +3153,7 @@ void psxBiosInitFull() {
     //biosB0[0x30] = psxBios_sys_b0_30;
     //biosB0[0x31] = psxBios_sys_b0_31;
 
-#if HLE_ENABLE_FILEIO
+#if HLE_ENABLE_MCD
     biosA0[0x08] = psxBios_getc;
     biosA0[0x09] = psxBios_putc;
     biosB0[0x32] = psxBios_open;
@@ -3186,14 +3176,14 @@ void psxBiosInitFull() {
     //biosB0[0x49] = psxBios_PrintInstalledDevices;
 #endif
 
-#if HLE_ENABLE_FINDFILE
+#if HLE_ENABLE_MCD
     biosB0[0x42] = psxBios_firstfile;
     biosB0[0x43] = psxBios_nextfile;
     biosB0[0x44] = psxBios_rename;
     biosB0[0x45] = psxBios_delete;
 #endif
 
-#if HLE_ENABLE_FORMAT
+#if HLE_ENABLE_MCD
     biosB0[0x41] = psxBios_format;
 #endif
 
@@ -3295,7 +3285,6 @@ void psxBiosInitFull() {
     pad_buf1 = NULL;
     pad_buf2 = NULL;
     pad_buf1len = pad_buf2len = 0;
-    CardState = -1;
 #endif
 
 #if HLE_ENABLE_HEAP
@@ -3305,10 +3294,11 @@ void psxBiosInitFull() {
 #endif
 
 #if HLE_ENABLE_MCD
+    CardState = -1;
     card_active_chan = 0;
 #endif
 
-#if HLE_ENABLE_FILEIO
+#if HLE_ENABLE_MCD
     memset(FDesc, 0, sizeof(FDesc));
 #endif
 
