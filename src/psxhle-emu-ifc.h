@@ -178,27 +178,19 @@ static void psxCpuClear(u32 startPC, int size_in_words)
 
 static void Write_ISTAT(u32 val) { IRQ_Write(0x1070, val); }
 static void Write_IMASK(u32 val) { IRQ_Write(0x1074, val); }
+static void Write_MEMCTRL2(u32 val) { /* NOP */; }
 static u32 Read_ISTAT() { return IRQ_Read(0x1070); }
 static u32 Read_IMASK() { return IRQ_Read(0x1074); }
+static u32 Read_MEMCTRL2() { return 0; }
 
 static void SetPC(uint32_t newpc) {
     PSX_CPU->BACKED_PC = newpc;
     PSX_CPU->BACKED_new_PC = PSX_CPU->BACKED_PC + 4;
 }
 
-static void HleExecuteRecursive(u32 startPC, u32 returnPC) {
-    pc0 = pc;
-    ra = returnPC;
-
-    // FIXME: add recursive interpreter execution support to mednafen
-    hleSoftCall = TRUE;
-    while (pc0 != 0x80001000) psxCpu->ExecuteBlock();
-    hleSoftCall = FALSE;
-}
-
 static void psxCpuClear(u32 startPC, int size_in_words)
 {
-    psxCpu->Clear(startPC, size_in_words);
+    PSX_CPU->Clear(startPC, size_in_words);
 }
 #endif
 
@@ -343,6 +335,18 @@ static void HleExecuteRecursive(u32 startPC, u32 returnPC) {
 
     hleSoftCall = TRUE;
     while (pc0 != 0x80001000) psxCpu->ExecuteBlock();
+    hleSoftCall = FALSE;
+}
+#endif
+
+#if HLE_MEDNAFEN_IFC
+static void HleExecuteRecursive(u32 startPC, u32 returnPC) {
+    pc0 = startPC;
+    ra = returnPC;
+
+    // FIXME: add recursive interpreter execution support to mednafen
+    hleSoftCall = TRUE;
+    while (pc0 != 0x80001000) PSX_CPU->ExecuteBlock();
     hleSoftCall = FALSE;
 }
 #endif
