@@ -229,9 +229,19 @@ void VmcWriteNV(int port, int slot, const void* src, int size) {
     SaveMcd(port ? Config.Mcd2 : Config.Mcd1, dest, a1 * 128, 128);
 }
 
+void VmcReadNV(int port, int slot, void* dest, int offset, int size) {
+    dbg_check((u32)port < 2);
+}
+
 bool VmcEnabled(int port, int slot) {
     dbg_check((u32)port < 2);
     return !McdDisable[port];
+}
+
+u8* VmcGet(int port) {
+    dbg_check((u32)port < 2);
+    auto* dest = port ? Mcd2Data : Mcd1Data;
+	return (u8*)dest;
 }
 #endif
 
@@ -258,6 +268,11 @@ bool VmcEnabled(int port, int slot) {
 
     return 0;
 }
+
+u8* VmcGet(int port) {
+    dbg_check((u32)port < 2);
+    return PSX_FIO->GetMemcardDevice(port);
+}
 #endif
 
 #if HLE_DUCKSTATION_IFC && HLE_ENABLE_MCD
@@ -272,6 +287,11 @@ void VmcReadNV(int port, int slot, void* dest, int offset, int size) {
 bool VmcEnabled(int port, int slot) {
     dbg_check((u32)port < 2);
     return 0;
+}
+
+u8* VmcGet(int port) {
+    dbg_check((u32)port < 2);
+	return nullptr;
 }
 #endif
 
@@ -2441,7 +2461,8 @@ static size_t strlen_internal(char* p)
     return size_of_array;
 }
 
-static void bufile(const u8* mcdraw) {
+static void bufile(int mcd_port) {
+	auto mcdraw = VmcGet(mcd_port);
     u32 _dir = a1;
     struct DIRENTRY *dir = (struct DIRENTRY *)Ra1;
 
@@ -2492,7 +2513,7 @@ void psxBios_firstfile(HLE_BIOS_CALL_ARGS) { // 42
 
     v0 = 0;
 
-    auto mcd = PSX_FIO->GetMemcardDevice(0);
+    //auto mcd = PSX_FIO->GetMemcardDevice(0);
 
     if (pa0) {
         strcpy(ffile, pa0);
@@ -2501,7 +2522,7 @@ void psxBios_firstfile(HLE_BIOS_CALL_ARGS) { // 42
         if (!strncmp(pa0, "bu00", 4)) {
             // firstfile() calls _card_read() internally, so deliver it's event
             DeliverEvent(0x11, 0x2);
-            bufile(VmcReadNV);
+            bufile(1);
         } else if (!strncmp(pa0, "bu10", 4)) {
             // firstfile() calls _card_read() internally, so deliver it's event
             DeliverEvent(0x11, 0x2);
