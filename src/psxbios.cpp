@@ -2580,8 +2580,8 @@ void psxBios_nextfile(HLE_BIOS_CALL_ARGS) { // 43
  */
 
 void psxBios_rename(HLE_BIOS_CALL_ARGS) { // 44
-    void *pa0 = Ra0;
-    void *pa1 = Ra1;
+    char *pa0 = Ra0;
+    char *pa1 = Ra1;
     char *ptr;
     int i;
 
@@ -2621,7 +2621,7 @@ void psxBios_rename(HLE_BIOS_CALL_ARGS) { // 44
  */
 
 void psxBios_delete(HLE_BIOS_CALL_ARGS) { // 45
-    void *pa0 = Ra0;
+    char *pa0 = Ra0;
     char *ptr;
     int i;
 
