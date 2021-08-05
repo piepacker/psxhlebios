@@ -187,7 +187,7 @@ void psxFs_CacheFilesystem() {
     s_curfilename = filename;
     log_host("(psxhle) caching iso filesystem: %s", filename);
 
-    s_fd = posix_open(filename, O_RDONLY, _S_IREAD | _S_IWRITE);
+    s_fd = posix_open(filename, O_RDONLY, DEFFILEMODE);
     if (s_fd < 0) {
         log_error("%s: %s", strerror(errno), filename);
         dbg_abort();
