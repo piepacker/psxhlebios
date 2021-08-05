@@ -40,3 +40,5 @@ __pycache__
 
 # other repos
 /dep/mac
+
+.*.sw*
