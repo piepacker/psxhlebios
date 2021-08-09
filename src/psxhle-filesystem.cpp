@@ -79,7 +79,7 @@ void AddFile(psdisc_off_t secstart, psdisc_off_t len, int type, const uint8_t* n
         return;
     }
 
-    fileEnt_t fe;
+    fileEnt_t fe = {};
 
     fe.start_sector     = secstart;
     fe.parent_sector    = parent;
@@ -115,9 +115,11 @@ CDIF* s_cur_cdif;
 
 #if HLE_DUCKSTATION_IFC
 #include "common/cd_image.h"
+#include "core/system.h"
 #include <memory>
 
 std::unique_ptr<CDImage> ds_cdimage = nullptr;
+std::string s_iso_path = "";
 #endif
 
 #if HLE_PCSX_IFC
@@ -175,7 +177,7 @@ std::string s_curfilename;
 #endif
 
 void psxFs_CacheFilesystem() {
-	log_host("[HLEBIOS] psxFs_CacheFilesystem");
+    log_host("[HLEBIOS] psxFs_CacheFilesystem");
 #if HLE_PCSX_IFC
     auto filename = GetIsoFile();
 
@@ -216,6 +218,20 @@ void psxFs_CacheFilesystem() {
     if (cdif == s_cur_cdif) {
         return;
     }
+    s_cur_cdif = cdif;
+#endif
+
+#if HLE_DUCKSTATION_IFC
+    auto fullpath = System::GetRunningPath();
+    if (fullpath.empty()) {
+        log_error( "(psxfs) psxFs_CacheFilesystem: empty path");
+        return;
+    }
+    if (fullpath == s_iso_path)
+        return;
+
+    s_iso_path = fullpath;
+    ds_cdimage = CDImage::Open(fullpath.c_str(), nullptr);
 #endif
 
     m_filesBySector   .clear();
@@ -224,26 +240,15 @@ void psxFs_CacheFilesystem() {
 
     m_dirsBySector.insert({0, fs::path()});
 
+    PsDiscDirParser parser;
 #if HLE_PCSX_IFC
-    //m_dirsBySector.insert({0, fs::path()});
-
-    PsDiscDirParser parser;
     parser.read_data_cb = ReadData2048;
-    parser.ReadFilesystem(AddFile);
-    buildFilesByDirLUT();
-#endif
-
-#if HLE_MEDNAFEN_IFC
-    s_cur_cdif = cdif;
-    PsDiscDirParser parser;
+#elif HLE_MEDNAFEN_IFC
     parser.read_data_cb = [&](uint8_t* dest, psdisc_off_t sector, psdisc_off_t offset, psdisc_off_t length) {
         dbg_check(offset == 0);
         return s_cur_cdif->ReadSector(dest, sector, (length + 2047) / 2048) != 0;
-    };      
-#endif
-
-#if HLE_DUCKSTATION_IFC
-    PsDiscDirParser parser;
+    };
+#elif HLE_DUCKSTATION_IFC
     parser.read_data_cb = [&](uint8_t* dest, psdisc_off_t sector, psdisc_off_t offset, psdisc_off_t length) {
         dbg_check(offset == 0);
         dbg_check(sector);
@@ -254,9 +259,9 @@ void psxFs_CacheFilesystem() {
         auto secread = ds_cdimage->Read(CDImage::ReadMode::DataOnly, length / 2048, dest);
         return (secread == nSectors);
     };
+#endif
     parser.ReadFilesystem(AddFile);
     buildFilesByDirLUT();
-#endif
 }
 
 fs::path psxFs_Canonicalize(const char* src) {
@@ -343,11 +348,3 @@ bool psxFs_LoadExecutableHeader(const char* path, PSX_EXE_HEADER& dest) {
 
     return 0;
 }
-
-#if HLE_DUCKSTATION_IFC
-void psxFs_SetMediaFilename(std::string fullpath) {
-    
-    ds_cdimage = CDImage::Open(fullpath.c_str(), nullptr);
-    psxFs_CacheFilesystem();
-}
-#endif
