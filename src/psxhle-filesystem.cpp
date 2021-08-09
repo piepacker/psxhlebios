@@ -175,6 +175,7 @@ std::string s_curfilename;
 #endif
 
 void psxFs_CacheFilesystem() {
+	log_host("[HLEBIOS] psxFs_CacheFilesystem");
 #if HLE_PCSX_IFC
     auto filename = GetIsoFile();
 
@@ -224,10 +225,10 @@ void psxFs_CacheFilesystem() {
     m_dirsBySector.insert({0, fs::path()});
 
 #if HLE_PCSX_IFC
-    m_dirsBySector.insert({0, fs::path()});
+    //m_dirsBySector.insert({0, fs::path()});
 
     PsDiscDirParser parser;
-    parser.read_data_cb = ReadData2048; 
+    parser.read_data_cb = ReadData2048;
     parser.ReadFilesystem(AddFile);
     buildFilesByDirLUT();
 #endif
@@ -252,7 +253,9 @@ void psxFs_CacheFilesystem() {
         auto nSectors = length / 2048;
         auto secread = ds_cdimage->Read(CDImage::ReadMode::DataOnly, length / 2048, dest);
         return (secread == nSectors);
-    };      
+    };
+    parser.ReadFilesystem(AddFile);
+    buildFilesByDirLUT();
 #endif
 }
 

@@ -222,26 +222,45 @@ const char * const biosC0n[256] = {
 };
 
 #if HLE_PCSX_IFC
-void VmcWriteNV(int port, int slot, const void* src, int size) {
-    dbg_check((u32)port < 2);
-    auto* dest = port ? Mcd2Data : Mcd1Data;
-    memcpy(dest + a1 * 128, (uint8_t*)src, 128);
-    SaveMcd(port ? Config.Mcd2 : Config.Mcd1, dest, a1 * 128, 128);
-}
-
 void VmcReadNV(int port, int slot, void* dest, int offset, int size) {
     dbg_check((u32)port < 2);
 }
 
-bool VmcEnabled(int port, int slot) {
+bool VmcEnabled(int port, int slot = 0) {
     dbg_check((u32)port < 2);
     return !McdDisable[port];
 }
 
-u8* VmcGet(int port) {
+char* VmcGet(int port) {
     dbg_check((u32)port < 2);
     auto* dest = port ? Mcd2Data : Mcd1Data;
-	return (u8*)dest;
+    return dest;
+}
+
+void VmcCreate(int port) {
+    dbg_check((u32)port < 2);
+    if (port == 0) {
+        CreateMcd(Config.Mcd1);
+        LoadMcd(1, Config.Mcd1);
+    } else {
+        CreateMcd(Config.Mcd2);
+        LoadMcd(2, Config.Mcd2);
+    }
+}
+
+void VmcDirty(int port) {
+    dbg_check((u32)port < 2);
+    // Flush the full mcard, don't bother with partial write
+    SaveMcd(port ? Config.Mcd2 : Config.Mcd1, VmcGet(port), 0, MCD_SIZE);
+}
+
+void VmcWriteNV(int port, int dst_offset, const void* src, int size) {
+    dbg_check((u32)port < 2);
+    auto dst = VmcGet(port);
+    if (dst == nullptr) return;
+
+    memcpy(dst + dst_offset, src, size);
+    VmcDirty(port);
 }
 #endif
 
@@ -260,7 +279,7 @@ void VmcReadNV(int port, int slot, void* dest, int offset, int size) {
         mcd->ReadNV((uint8_t*)dest, offset, size);
 }
 
-bool VmcEnabled(int port, int slot) {
+bool VmcEnabled(int port, int slot = 0) {
     dbg_check((u32)port < 2);
     if (auto mcd = PSX_FIO->GetMemcardDevice(port)) {
         return 1;
@@ -269,29 +288,50 @@ bool VmcEnabled(int port, int slot) {
     return 0;
 }
 
-u8* VmcGet(int port) {
+char* VmcGet(int port) {
     dbg_check((u32)port < 2);
     return PSX_FIO->GetMemcardDevice(port);
+}
+
+void VmcCreate(int port) {
+    dbg_check((u32)port < 2);
 }
 #endif
 
 #if HLE_DUCKSTATION_IFC && HLE_ENABLE_MCD
-void VmcWriteNV(int port, int slot, const void* src, int offset, int size) {
+void VmcDirty(int port) {
     dbg_check((u32)port < 2);
+    // FIXME need to set m_changed of the memory card in DS to flush the memory
+    // card to the disk
+}
+
+char* VmcGet(int port) {
+    dbg_check((u32)port < 2);
+    auto card = g_pad.GetMemoryCard(port);
+    auto& data = card->GetData();
+    return (char*)data.data();
+}
+
+void VmcWriteNV(int port, int dst_offset, const void* src, int size) {
+    dbg_check((u32)port < 2);
+    auto dst = VmcGet(port);
+    if (dst == nullptr) return;
+
+    memcpy(dst + dst_offset, src, size);
+    VmcDirty(port);
 }
 
 void VmcReadNV(int port, int slot, void* dest, int offset, int size) {
     dbg_check((u32)port < 2);
 }
 
-bool VmcEnabled(int port, int slot) {
+bool VmcEnabled(int port, int slot = 0) {
     dbg_check((u32)port < 2);
-    return 0;
+    auto card = g_pad.GetMemoryCard(port);
+    return card != nullptr;
 }
 
-u8* VmcGet(int port) {
-    dbg_check((u32)port < 2);
-	return nullptr;
+void VmcCreate(int port) {
 }
 #endif
 
@@ -1405,16 +1445,15 @@ _start:
 #if HLE_ENABLE_MCD
 void psxBios_format(HLE_BIOS_CALL_ARGS) { // 0x41
     PSXBIOS_LOG_NEW("format");
-    if (strcmp(Ra0, "bu00:") == 0 && Config.Mcd1[0] != '\0')
+    // TO BE tested on PCSX
+    if (strcmp(Ra0, "bu00:") == 0 && /*Config.Mcd1[0] != '\0'*/ VmcEnabled(0))
     {
-        CreateMcd(Config.Mcd1);
-        LoadMcd(1, Config.Mcd1);
+        VmcCreate(0);
         v0 = 1;
     }
-    else if (strcmp(Ra0, "bu10:") == 0 && Config.Mcd2[0] != '\0')
+    else if (strcmp(Ra0, "bu10:") == 0 && /*Config.Mcd2[0] != '\0'*/ VmcEnabled(1))
     {
-        CreateMcd(Config.Mcd2);
-        LoadMcd(2, Config.Mcd2);
+        VmcCreate(1);
         v0 = 1;
     }
     else
@@ -1481,7 +1520,7 @@ void psxBios_Load(HLE_BIOS_CALL_ARGS) { // 0x42
             *pa1 = tdesc;
         }
 
-        for(int i=0; i<sizeof(tdesc) / 4; ++i) {
+        for(size_t i=0; i<sizeof(tdesc) / 4; ++i) {
             auto* val = (int32_t*)&tdesc + i;
             StoreToLE(*val, *val);
         }
@@ -1607,8 +1646,8 @@ void psxBios_GPU_cwb(HLE_BIOS_CALL_ARGS) { // 0x4a
 
     pc0 = ra;
 }
-   
-void psxBios_GPU_SendPackets(HLE_BIOS_CALL_ARGS) { // 4b	
+
+void psxBios_GPU_SendPackets(HLE_BIOS_CALL_ARGS) { // 4b
     GPU_W_STATUS(0x04000002);
     DMA_W(0x1f8010f4, 0);
     DMA_W(0x1f8010f0, DMA_R(0x1f8010f0)|0x800);
@@ -1713,7 +1752,7 @@ void psxBios__card_info(HLE_BIOS_CALL_ARGS) { // ab
     case 0x0:
     case 0x1:
         ret = 0x2;
-        if (McdDisable[port & 1])
+        if (!VmcEnabled(port & 1))
             ret = 0x8;
         break;
     default:
@@ -1722,7 +1761,7 @@ void psxBios__card_info(HLE_BIOS_CALL_ARGS) { // ab
         break;
     }
 
-    if (McdDisable[0] && McdDisable[1])
+    if (!VmcEnabled(0) && !VmcEnabled(1))
         ret = 0x8;
 
     DeliverEvent(0x11, 0x2); // 0xf0000011, 0x0004
@@ -2192,39 +2231,52 @@ void psxBios_UnDeliverEvent(HLE_BIOS_CALL_ARGS) { // 0x20
 #endif
 
 #if HLE_ENABLE_MCD
-#define buread(Ra1, mcd, length) { \
-    SysPrintf("read %d: %x,%x (%s)\n", FDesc[1 + mcd].mcfile, FDesc[1 + mcd].offset, a2, Mcd##mcd##Data + 128 * FDesc[1 + mcd].mcfile + 0xa); \
-    char* ptr = Mcd##mcd##Data + 8192 * FDesc[1 + mcd].mcfile + FDesc[1 + mcd].offset; \
-    memcpy(Ra1, ptr, length); \
-    if (FDesc[1 + mcd].mode & 0x8000) { \
-    DeliverEvent(0x11, 0x2); /* 0xf0000011, 0x0004 */ \
-    DeliverEvent(0x81, 0x2); /* 0xf4000001, 0x0004 */ \
-    v0 = 0; } \
-    else v0 = length; \
-    FDesc[1 + mcd].offset += v0; \
+void buread(void* ra1, int mcd, int length) {
+    auto mcdraw = VmcGet(mcd - 1);
+    auto* ptr = mcdraw;
+
+    SysPrintf("read %d: %x,%x (%s)\n", FDesc[1 + mcd].mcfile, FDesc[1 + mcd].offset, a2, ptr + 128 * FDesc[1 + mcd].mcfile + 0xa);
+
+    memcpy(ra1, ptr, length);
+
+    if (FDesc[1 + mcd].mode & 0x8000) {
+        DeliverEvent(0x11, 0x2); /* 0xf0000011, 0x0004 */
+        DeliverEvent(0x81, 0x2); /* 0xf4000001, 0x0004 */
+        v0 = 0;
+    }
+    else
+        v0 = length;
+
+    FDesc[1 + mcd].offset += v0;
 }
 
-#define buwrite(Ra1, mcd, length) { \
-    u32 offset =  + 8192 * FDesc[1 + mcd].mcfile + FDesc[1 + mcd].offset; \
-    SysPrintf("write %d: %x,%x\n", FDesc[1 + mcd].mcfile, FDesc[1 + mcd].offset, a2); \
-    char* ptr = Mcd##mcd##Data + offset; \
-    memcpy(ptr, Ra1, length); \
-    FDesc[1 + mcd].offset += length; \
-    SaveMcd(Config.Mcd##mcd, Mcd##mcd##Data, offset, length); \
-    if (FDesc[1 + mcd].mode & 0x8000) { \
-    DeliverEvent(0x11, 0x2); /* 0xf0000011, 0x0004 */ \
-    DeliverEvent(0x81, 0x2); /* 0xf4000001, 0x0004 */ \
-    v0 = 0; } \
-    else v0 = length; \
+void buwrite(void* ra1, int mcd, int length) {
+    u32 offset =  + 8192 * FDesc[1 + mcd].mcfile + FDesc[1 + mcd].offset;
+
+    SysPrintf("write %d: %x,%x\n", FDesc[1 + mcd].mcfile, FDesc[1 + mcd].offset, a2);
+
+    VmcWriteNV(mcd -1, offset, ra1, length);
+
+    FDesc[1 + mcd].offset += length;
+
+    if (FDesc[1 + mcd].mode & 0x8000) {
+        DeliverEvent(0x11, 0x2); /* 0xf0000011, 0x0004 */
+        DeliverEvent(0x81, 0x2); /* 0xf4000001, 0x0004 */
+        v0 = 0;
+    }
+    else
+        v0 = length;
 }
 
 char ffile[64], *pfile;
 int nfile;
 
-static void buopen(int mcd, char *ptr, char *cfg)
+static void buopen(int mcd)
 {
+    auto mcdraw = VmcGet(mcd - 1);
     int i;
-    char *mcd_data = ptr;
+    char *ptr = (char*)mcdraw;
+    char *mcd_data = (char*)mcdraw;
 
     strcpy(FDesc[1 + mcd].name, Ra0+5);
     FDesc[1 + mcd].offset = 0;
@@ -2277,8 +2329,7 @@ static void buopen(int mcd, char *ptr, char *cfg)
             SysPrintf("openC %s %d\n", ptr, nblk);
             v0 = 1 + mcd;
             /* just go ahead and resave them all */
-            //VmcWriteNV(
-            SaveMcd(cfg, ptr, 128, 128 * 15);
+            VmcDirty(mcd - 1);
             break;
         }
         /* shouldn't this return ENOSPC if i == 16? */
@@ -2352,11 +2403,11 @@ void psxBios_open(HLE_BIOS_CALL_ARGS) { // 0x32
 
     if (pa0) {
         if (!strncmp(pa0, "bu00", 4)) {
-            buopen(1, Mcd1Data, Config.Mcd1);
+            buopen(1);
         }
 
         if (!strncmp(pa0, "bu10", 4)) {
-            buopen(2, Mcd2Data, Config.Mcd2);
+            buopen(2);
         }
     }
 
@@ -2462,7 +2513,7 @@ static size_t strlen_internal(char* p)
 }
 
 static void bufile(int mcd_port) {
-	auto mcdraw = VmcGet(mcd_port);
+    auto mcdraw = VmcGet(mcd_port - 1);
     u32 _dir = a1;
     struct DIRENTRY *dir = (struct DIRENTRY *)Ra1;
 
@@ -2503,11 +2554,9 @@ static void bufile(int mcd_port) {
 /*
  *	struct DIRENTRY* firstfile(char *name,struct DIRENTRY *dir);
  */
- 
+
 void psxBios_firstfile(HLE_BIOS_CALL_ARGS) { // 42
     auto *pa0 = Ra0;
-    char *ptr;
-    int i;
 
     PSXBIOS_LOG("psxBios_%s: %s\n", biosB0n[0x42], Ra0);
 
@@ -2539,9 +2588,6 @@ void psxBios_firstfile(HLE_BIOS_CALL_ARGS) { // 42
 
 void psxBios_nextfile(HLE_BIOS_CALL_ARGS) { // 43
     struct DIRENTRY *dir = (struct DIRENTRY *)Ra0;
-    u32 _dir = a0;
-    char *ptr;
-    int i;
 
     PSXBIOS_LOG("psxBios_%s: %s\n", biosB0n[0x43], dir->name);
 
@@ -2558,21 +2604,28 @@ void psxBios_nextfile(HLE_BIOS_CALL_ARGS) { // 43
     pc0 = ra;
 }
 
-#define burename(mcd) { \
-    for (i=1; i<16; i++) { \
-        int namelen, j, xorx = 0; \
-        ptr = Mcd##mcd##Data + 128 * i; \
-        if ((*ptr & 0xF0) != 0x50) continue; \
-        if (strcmp(Ra0+5, ptr+0xa)) continue; \
-        namelen = strlen(Ra1+5); \
-        memcpy(ptr+0xa, Ra1+5, namelen); \
-        memset(ptr+0xa+namelen, 0, 0x75-namelen); \
-        for (j=0; j<127; j++) xorx^= ptr[j]; \
-        ptr[127] = xorx; \
-        SaveMcd(Config.Mcd##mcd, Mcd##mcd##Data, 128 * i + 0xa, 0x76); \
-        v0 = 1; \
-        break; \
-    } \
+static void burename(int mcd) {
+    auto mcdraw = VmcGet(mcd - 1);
+    for (int i=1; i<16; i++) {
+        char* ptr = (char*)(mcdraw + 128 * i);
+
+        if ((*ptr & 0xF0) != 0x50) continue;
+        if (strcmp(Ra0+5, ptr+0xa)) continue;
+
+        int namelen = strlen(Ra1+5);
+        memcpy(ptr+0xa, Ra1+5, namelen);
+        memset(ptr+0xa+namelen, 0, 0x75-namelen);
+        SysPrintf("rename %116s\n", ptr+0xa);
+
+        int xorx = 0;
+        for (int j=0; j<127; j++) xorx^= ptr[j];
+        ptr[127] = xorx;
+
+        VmcDirty(mcd - 1);
+
+        v0 = 1;
+        break;
+    }
 }
 
 /*
@@ -2582,8 +2635,6 @@ void psxBios_nextfile(HLE_BIOS_CALL_ARGS) { // 43
 void psxBios_rename(HLE_BIOS_CALL_ARGS) { // 44
     char *pa0 = Ra0;
     char *pa1 = Ra1;
-    char *ptr;
-    int i;
 
     PSXBIOS_LOG("psxBios_%s: %s,%s\n", biosB0n[0x44], Ra0, Ra1);
 
@@ -2602,18 +2653,20 @@ void psxBios_rename(HLE_BIOS_CALL_ARGS) { // 44
     pc0 = ra;
 }
 
+static void budelete(int mcd) {
+    auto mcdraw = VmcGet(mcd - 1);
+    for (int i=1; i<16; i++) {
+        char* ptr = (char*)(mcdraw + 128 * i);
 
-#define budelete(mcd) { \
-    for (i=1; i<16; i++) { \
-        ptr = Mcd##mcd##Data + 128 * i; \
-        if ((*ptr & 0xF0) != 0x50) continue; \
-        if (strcmp(Ra0+5, ptr+0xa)) continue; \
-        *ptr = (*ptr & 0xf) | 0xA0; \
-        SaveMcd(Config.Mcd##mcd, Mcd##mcd##Data, 128 * i, 1); \
-        SysPrintf("delete %s\n", ptr+0xa); \
-        v0 = 1; \
-        break; \
-    } \
+        if ((*ptr & 0xF0) != 0x50) continue;
+        if (strcmp(Ra0+5, ptr+0xa)) continue;
+
+        *ptr = (*ptr & 0xf) | 0xA0;
+        VmcDirty(mcd - 1);
+        SysPrintf("delete %s\n", ptr+0xa);
+        v0 = 1;
+        break;
+    }
 }
 
 /*
@@ -2622,8 +2675,6 @@ void psxBios_rename(HLE_BIOS_CALL_ARGS) { // 44
 
 void psxBios_delete(HLE_BIOS_CALL_ARGS) { // 45
     char *pa0 = Ra0;
-    char *ptr;
-    int i;
 
     PSXBIOS_LOG("psxBios_%s: %s\n", biosB0n[0x45], Ra0);
 
@@ -2685,13 +2736,7 @@ void psxBios__card_write(HLE_BIOS_CALL_ARGS) { // 0x4e
     port = a0 >> 4;
 
     if (pa2) {
-        if (port == 0) {
-            memcpy(Mcd1Data + a1 * 128, pa2, 128);
-            SaveMcd(Config.Mcd1, Mcd1Data, a1 * 128, 128);
-        } else {
-            memcpy(Mcd2Data + a1 * 128, pa2, 128);
-            SaveMcd(Config.Mcd2, Mcd2Data, a1 * 128, 128);
-        }
+        VmcWriteNV(port, a1 * 128, pa2, 128);
     }
 
     DeliverEvent(0x11, 0x2); // 0xf0000011, 0x0004
@@ -2720,11 +2765,8 @@ void psxBios__card_read(HLE_BIOS_CALL_ARGS) { // 0x4f
     port = a0 >> 4;
 
     if (pa2) {
-        if (port == 0) {
-            memcpy(pa2, Mcd1Data + a1 * 128, 128);
-        } else {
-            memcpy(pa2, Mcd2Data + a1 * 128, 128);
-        }
+        auto mcdraw = VmcGet(port);
+        memcpy(pa2, mcdraw + a1 * 128, 128);
     }
 
     DeliverEvent(0x11, 0x2); // 0xf0000011, 0x0004
@@ -2953,7 +2995,7 @@ void psxBiosInit_StdLib() {
 
     //biosA0[0x3a] = psxBios__exit;
     biosA0[0x3b] = psxBios_getchar;
-    biosA0[0x3c] = psxBios_putchar;	
+    biosA0[0x3c] = psxBios_putchar;
     //biosA0[0x3d] = psxBios_gets;
 
     biosB0[0x56] = psxBios_GetC0Table;
@@ -2965,6 +3007,7 @@ void psxBiosInit_StdLib() {
 static bool is_hle_full_mode = 0;
 
 void psxBiosInit() {
+    PSXBIOS_LOG("psxBiosInit\n");
     psxBiosInitFull();
 }
 
@@ -3046,10 +3089,10 @@ void psxBiosInitFull() {
     //biosA0[0x7f] = psxBios_sys_a0_7f;
     //biosA0[0x80] = psxBios_sys_a0_80;
     //biosA0[0x81] = psxBios_sys_a0_81;
-    //biosA0[0x82] = psxBios_sys_a0_82;		
+    //biosA0[0x82] = psxBios_sys_a0_82;
     //biosA0[0x83] = psxBios_sys_a0_83;
     //biosA0[0x84] = psxBios_sys_a0_84;
-    //biosA0[0x85] = psxBios__96_CdStop;	
+    //biosA0[0x85] = psxBios__96_CdStop;
     //biosA0[0x86] = psxBios_sys_a0_86;
     //biosA0[0x87] = psxBios_sys_a0_87;
     //biosA0[0x88] = psxBios_sys_a0_88;
@@ -3123,7 +3166,7 @@ void psxBiosInitFull() {
         biosB0[0x04] = psxBios_StartRCnt;
         biosB0[0x05] = psxBios_StopRCnt;
         biosB0[0x06] = psxBios_ResetRCnt;
-        biosC0[0x0a] = psxBios_ChangeClearRCnt;	
+        biosC0[0x0a] = psxBios_ChangeClearRCnt;
     }
 #endif
 
@@ -3542,7 +3585,7 @@ void psxBiosLoadExecCdrom() {
             *pa1 = tdesc;
         }
 
-        for(int i=0; i<sizeof(tdesc) / 4; ++i) {
+        for(size_t i=0; i<sizeof(tdesc) / 4; ++i) {
             auto* val = (int32_t*)&tdesc + i;
             StoreToLE(*val, *val);
         }
@@ -3602,7 +3645,9 @@ void psxBiosLoadExecCdrom() {
 
 #if HLE_ENABLE_EXCEPTION
 void biosInterrupt() {
+#if HLE_PCSX_IFC && HLE_ENABLE_PAD
     int bufcount;
+#endif
 
     // Looks like this is polling the pads on every interrupt, which is definitely
     // not what we want. Will have to dig into it later and see if I can figure out why
@@ -3833,6 +3878,7 @@ extern "C" int HleDispatchCall(uint32_t pc) {
     }
 
     auto masked_pc = pc & 0x1fff'ffff;
+
     if (masked_pc == 0x1FC00180) {
         psxBiosException180();
     }

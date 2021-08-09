@@ -41,6 +41,7 @@
 #   include "core/dma.h"
 #   include "core/timers.h"
 #   include "core/interrupt_controller.h"
+#   include "core/pad.h"
 #endif
 
 #include <cstdint>
