@@ -390,7 +390,7 @@ static u32 SysIntRP[8];
 
 #if HLE_ENABLE_PAD || HLE_FULL
 static int *pad_buf = NULL;
-static char *pad_buf1 = NULL, *pad_buf2 = NULL;
+static u8 *pad_buf1 = NULL, *pad_buf2 = NULL;
 static int pad_buf1len, pad_buf2len;
 static int pad_stopped = 1;
 #endif
@@ -2096,9 +2096,9 @@ void psxBios_ChangeTh(HLE_BIOS_CALL_ARGS) { // 10
 void psxBios_InitPAD(HLE_BIOS_CALL_ARGS) { // 0x12
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x12]);
 
-    pad_buf1 = (char*)Ra0;
+    pad_buf1 = (u8*)Ra0;
     pad_buf1len = a1;
-    pad_buf2 = (char*)Ra2;
+    pad_buf2 = (u8*)Ra2;
     pad_buf2len = a3;
 
     v0 = 1; pc0 = ra;
@@ -3627,81 +3627,130 @@ void psxBiosLoadExecCdrom() {
     }
 }
 
-#define psxBios_PADpoll(pad) { \
-    PAD##pad##_startPoll(pad); \
-    pad_buf##pad[0] = 0; \
-    pad_buf##pad[1] = PAD##pad##_poll(0x42); \
-    if (!(pad_buf##pad[1] & 0x0f)) { \
-        bufcount = 32; \
-    } else { \
-        bufcount = (pad_buf##pad[1] & 0x0f) * 2; \
-    } \
-    PAD##pad##_poll(0); \
-    int i = 2; \
-    while (bufcount--) { \
-        pad_buf##pad[i++] = PAD##pad##_poll(0); \
-    } \
+#if HLE_ENABLE_PAD
+
+#if HLE_PCSX_IFC
+void PAD_startPoll(int port) {
+    if (port == 0) {
+        PAD1_startPoll(1);
+    } else {
+        PAD2_startPoll(2);
+    }
+}
+
+u8 PAD_poll(int port, u8 in) {
+    if (port == 0) {
+        return PAD1_poll(in);
+    } else {
+        return PAD2_poll(in);
+    }
+}
+#endif
+
+#if HLE_DUCKSTATION_IFC
+u8 PAD_poll(int port, u8 in) {
+    const u8 hiz = 0xff;
+    // PAD1_poll is `ack = controller->Transfer(data_out, &data_in);`
+    auto controller = g_pad.GetController(port);
+    if (controller == nullptr)
+        return hiz;
+
+    u8 out = hiz;
+    bool ack = controller->Transfer(in, &out);
+    return out;
+}
+
+void PAD_startPoll(int port) {
+    PAD_poll(port, 0x01);
+}
+#endif
+
+#endif
+
+void psxBios_PADpoll(int pad, u8* buf) {
+    const u8 hiz = 0xff;
+    int bufcount;
+
+    PAD_startPoll(pad);
+    buf[0] = 0;
+    buf[1] = PAD_poll(pad, 0x42);
+    if (buf[1] == hiz) {
+        bufcount = 0;
+    } else if (!(buf[1] & 0x0f)) {
+        bufcount = 32;
+    } else {
+        bufcount = (buf[1] & 0x0f) * 2;
+    }
+    PAD_poll(pad, 0);
+    int i = 2;
+    while (bufcount--) {
+        buf[i++] = PAD_poll(pad, 0);
+    }
+
+#if 0
+    PSXBIOS_LOG("psxBios_PADpoll %d:", pad);
+    for (int c = 0; c < i; c++) {
+        printf("%02x ", buf[c]);
+    }
+    printf("\n");
+#endif
 }
 
 #if HLE_ENABLE_EXCEPTION
 void biosInterrupt() {
-#if HLE_PCSX_IFC && HLE_ENABLE_PAD
-    int bufcount;
-#endif
+    auto istat = Read_ISTAT();
 
     // Looks like this is polling the pads on every interrupt, which is definitely
     // not what we want. Will have to dig into it later and see if I can figure out why
     // someone removed the Vsync condition gate below (likely some hack) --jstine
 
-//	if (Read_ISTAT() & 0x1) { // Vsync
+//	if (istat & 0x1) { // Vsync
         if (pad_buf != NULL) {
             u32 *buf = (u32*)pad_buf;
 
-        #if HLE_PCSX_IFC && HLE_ENABLE_PAD
-            PAD1_startPoll(1);
-            if (PAD1_poll(0x42) == 0x23) {
-                PAD1_poll(0);
-                *buf = PAD1_poll(0) << 8;
-                *buf |= PAD1_poll(0);
-                PAD1_poll(0);
-                *buf &= ~((PAD1_poll(0) > 0x20) ? 1 << 6 : 0);
-                *buf &= ~((PAD1_poll(0) > 0x20) ? 1 << 7 : 0);
+        #if HLE_ENABLE_PAD
+            PAD_startPoll(0);
+            if (PAD_poll(0, 0x42) == 0x23) {
+                PAD_poll(0, 0);
+                *buf = PAD_poll(0, 0) << 8;
+                *buf |= PAD_poll(0, 0);
+                PAD_poll(0, 0);
+                *buf &= ~((PAD_poll(0, 0) > 0x20) ? 1 << 6 : 0);
+                *buf &= ~((PAD_poll(0, 0) > 0x20) ? 1 << 7 : 0);
             } else {
-                PAD1_poll(0);
-                *buf = PAD1_poll(0) << 8;
-                *buf|= PAD1_poll(0);
+                PAD_poll(0, 0);
+                *buf = PAD_poll(0, 0) << 8;
+                *buf|= PAD_poll(0, 0);
             }
 
-            PAD2_startPoll(2);
-            if (PAD2_poll(0x42) == 0x23) {
-                PAD2_poll(0);
-                *buf |= PAD2_poll(0) << 24;
-                *buf |= PAD2_poll(0) << 16;
-                PAD2_poll(0);
-                *buf &= ~((PAD2_poll(0) > 0x20) ? 1 << 22 : 0);
-                *buf &= ~((PAD2_poll(0) > 0x20) ? 1 << 23 : 0);
+            PAD_startPoll(1);
+            if (PAD_poll(1, 0x42) == 0x23) {
+                PAD_poll(1, 0);
+                *buf |= PAD_poll(1, 0) << 24;
+                *buf |= PAD_poll(1, 0) << 16;
+                PAD_poll(1, 0);
+                *buf &= ~((PAD_poll(1, 0) > 0x20) ? 1 << 22 : 0);
+                *buf &= ~((PAD_poll(1, 0) > 0x20) ? 1 << 23 : 0);
             } else {
-                PAD2_poll(0);
-                *buf |= PAD2_poll(0) << 24;
-                *buf |= PAD2_poll(0) << 16;
+                PAD_poll(1, 0);
+                *buf |= PAD_poll(1, 0) << 24;
+                *buf |= PAD_poll(1, 0) << 16;
             }
         #endif
         }
 
         if (!pad_stopped)  {
-    #if HLE_PCSX_IFC && HLE_ENABLE_PAD
+    #if HLE_ENABLE_PAD
             if (pad_buf1) {
-                psxBios_PADpoll(1);
+                psxBios_PADpoll(0, pad_buf1);
             }
 
             if (pad_buf2) {
-                psxBios_PADpoll(2);
+                psxBios_PADpoll(1, pad_buf2);
             }
     #endif
         }
 //	}
-
-    auto istat = Read_ISTAT();
 
     if (istat & 0x1) { // Vsync
         if (RcEV[3][1].status == EvStACTIVE) {
@@ -3933,8 +3982,8 @@ void psxBiosFreeze(int Mode) {
 
     //bfreezepsxMptr(jmp_int, u32);
     bfreezepsxMptr(pad_buf, int);
-    bfreezepsxMptr(pad_buf1, char);
-    bfreezepsxMptr(pad_buf2, char);
+    bfreezepsxMptr(pad_buf1, u8);
+    bfreezepsxMptr(pad_buf2, u8);
     bfreezepsxMptr(heap_addr, u32);
     bfreezel(&pad_buf1len);
     bfreezel(&pad_buf2len);
