@@ -71,6 +71,8 @@ void StoreToBE(T& dest, const T& src) {
 }
 
 
+// Keep trace of the event status to only print change
+static u8 s_debug_ev[256*256];
 
 static bool s_suppress_spam = 0;
 static std::map<std::string, int> s_repeat_supress;
@@ -1978,7 +1980,13 @@ void psxBios_TestEvent(HLE_BIOS_CALL_ARGS) { // 0b
         v0 = 0;
     }
 
-    PSXBIOS_LOG_SPAM("TestEvent", "psxBios_%s %x,%x: result=%x\n", biosB0n[0x0b], ev, spec, v0);
+    // Print only TestEvent change. The spamy part is the polling of the result
+    //PSXBIOS_LOG_SPAM("TestEvent", "psxBios_%s %x,%x: result=%x\n", biosB0n[0x0b], ev, spec, v0);
+    int key = a0 & 0xFFFF;
+    if (s_debug_ev[key] != v0) {
+        s_debug_ev[key] = v0;
+        PSXBIOS_LOG("psxBios_%s %x,%x: result=%x\n", biosB0n[0x0b], ev, spec, v0);
+    }
 
     pc0 = ra;
 }
@@ -3447,6 +3455,9 @@ void psxBiosInitFull() {
         StoreToLE(psxMu32ref(0x000C), 0x00000000);
     }
 #endif
+
+    // Init value can be anything but 0/1
+    memset(s_debug_ev, 0xFF, sizeof(s_debug_ev));
 }
 
 void psxBiosShutdown() {
