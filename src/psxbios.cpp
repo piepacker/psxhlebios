@@ -1960,6 +1960,7 @@ void psxBios_WaitEvent(HLE_BIOS_CALL_ARGS) { // 0a
     }
 
     v0 = 0;
+    pc0 = ra;
 }
 
 void psxBios_TestEvent(HLE_BIOS_CALL_ARGS) { // 0b
