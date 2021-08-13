@@ -24,6 +24,7 @@
 
 #include "libpsxhle.h"
 #include "libpsxbios.h"
+#include "psxhle-emu-ifc.h"
 
 #if 0
 #define PSXHLE_LOG SysPrintf
@@ -55,21 +56,21 @@ static void hleC0() {
 }
 
 static void hleBootstrap() { // 0xbfc00000
-    PSXHLE_LOG("hleBootstrap\n");
+    PSXBIOS_LOG("hleBootstrap\n");
     CheckCdrom();
     LoadCdrom();
-    PSXHLE_LOG("CdromLabel: \"%s\": PC = %8.8lx (SP = %8.8lx)\n", CdromLabel, psxRegs.pc, psxRegs.GPR.n.sp);
+    PSXBIOS_LOG("CdromLabel: \"%s\": PC = %8.8x (SP = %8.8x)\n", CdromLabel, psxRegs.pc, psxRegs.GPR.n.sp);
 }
 
-typedef struct {                   
-    u32 _pc0;      
-    u32 gp0;      
-    u32 t_addr;   
-    u32 t_size;   
-    u32 d_addr;   
-    u32 d_size;   
-    u32 b_addr;   
-    u32 b_size;   
+typedef struct {
+    u32 _pc0;
+    u32 gp0;
+    u32 t_addr;
+    u32 t_size;
+    u32 d_addr;
+    u32 d_size;
+    u32 b_addr;
+    u32 b_size;
     u32 S_addr;
     u32 s_size;
     u32 _sp,_fp,_gp,ret,base;
@@ -78,7 +79,7 @@ typedef struct {
 static void hleExecRet() {
     EXEC *header = (EXEC*)PSXM(psxRegs.GPR.n.s0);
 
-    PSXHLE_LOG("ExecRet %x: %x\n", psxRegs.GPR.n.s0, header->ret);
+    PSXBIOS_LOG("ExecRet %x: %x\n", psxRegs.GPR.n.s0, header->ret);
 
     psxRegs.GPR.n.ra = header->ret;
     psxRegs.GPR.n.sp = header->_sp;
@@ -96,4 +97,4 @@ void (*psxHLEt[256])() = {
     hleDummy, hleDummy
 };
 
-#endif 
+#endif
