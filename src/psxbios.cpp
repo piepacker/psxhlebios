@@ -2260,13 +2260,14 @@ void psxBios_UnDeliverEvent(HLE_BIOS_CALL_ARGS) { // 0x20
 #if HLE_ENABLE_MCD
 void buread(void* ra1, int mcd, int length) {
     auto mcdraw = VmcGet(mcd - 1);
-    auto* ptr = mcdraw;
+    auto& fd = FDesc[1 + mcd];
 
-    SysPrintf("read %d: %x,%x (%s)\n", FDesc[1 + mcd].mcfile, FDesc[1 + mcd].offset, a2, ptr + 128 * FDesc[1 + mcd].mcfile + 0xa);
+    SysPrintf("read %d: %x,%x (%s)\n", fd.mcfile, fd.offset, length, mcdraw + 128 * fd.mcfile + 0xa);
+    auto* ptr = mcdraw + 8192 * fd.mcfile + fd.offset;
 
     memcpy(ra1, ptr, length);
 
-    if (FDesc[1 + mcd].mode & 0x8000) {
+    if (fd.mode & 0x8000) {
         DeliverEvent(0x11, 0x2); /* 0xf0000011, 0x0004 */
         DeliverEvent(0x81, 0x2); /* 0xf4000001, 0x0004 */
         v0 = 0;
@@ -2274,13 +2275,13 @@ void buread(void* ra1, int mcd, int length) {
     else
         v0 = length;
 
-    FDesc[1 + mcd].offset += v0;
+    fd.offset += v0;
 }
 
 void buwrite(void* ra1, int mcd, int length) {
     u32 offset =  + 8192 * FDesc[1 + mcd].mcfile + FDesc[1 + mcd].offset;
 
-    SysPrintf("write %d: %x,%x\n", FDesc[1 + mcd].mcfile, FDesc[1 + mcd].offset, a2);
+    SysPrintf("write %d: %x,%x\n", FDesc[1 + mcd].mcfile, FDesc[1 + mcd].offset, length);
 
     VmcWriteNV(mcd -1, offset, ra1, length);
 
