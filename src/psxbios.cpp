@@ -451,6 +451,8 @@ static inline void softCall2(u32 pc) {
 }
 
 static inline void DeliverEvent(u32 ev, u32 spec) {
+    PSXBIOS_LOG("DeliverEvent %d;%d (%d)\n", ev, spec, EventCB[ev][spec].status);
+
     if (EventCB[ev][spec].status != EvStACTIVE) return;
 
 //	EventCB[ev][spec].status = EvStALREADY;
