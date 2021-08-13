@@ -1500,6 +1500,22 @@ void psxBios_Exec(HLE_BIOS_CALL_ARGS) { // 43
     pc0 = header->_pc;
 }
 
+// It isn't a bios call but executable might exit and replaced with another one
+static void psxBios_ExecRet() {
+    auto header = (EXEC_DESCRIPTOR*)PSXM(s0);
+
+    PSXBIOS_LOG("psxBios_ExecRet %x: %x\n", s0, header->SavedRA);
+
+    ra = header->SavedRA;
+    sp = header->SavedSP;
+    fp = header->SavedFP;
+    gp = header->SavedGP;
+    s0 = header->SavedS0;
+
+    v0 = 1;
+    pc0 = ra;
+}
+
 #if HLE_ENABLE_LOADEXEC
 extern void         psxFs_CacheFilesystem();
 extern bool         psxFs_LoadExecutableHeader(const char* path, PSX_EXE_HEADER& dest);
@@ -3959,6 +3975,11 @@ extern "C" int HleDispatchCall(uint32_t pc) {
 
     if(masked_pc == 0xC0) {
         return psxbios_invoke_C0();
+    }
+
+    if(masked_pc == 0x8000) {
+        psxBios_ExecRet();
+        return 1;
     }
 
     if (is_hle_full_mode) {
