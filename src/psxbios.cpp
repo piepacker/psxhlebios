@@ -3946,6 +3946,11 @@ extern "C" int32_t psxbios_invoke_A0() { return psxbios_invoke_any(0xA0, biosA0,
 extern "C" int32_t psxbios_invoke_B0() { return psxbios_invoke_any(0xB0, biosB0, biosB0n); }
 extern "C" int32_t psxbios_invoke_C0() { return psxbios_invoke_any(0xC0, biosC0, biosC0n); }
 
+static int psxbios_dummy() {
+    pc0 = ra;
+    return 1;
+}
+
 extern "C" int HleDispatchCall(uint32_t pc) {
 
     if (IsHlePC(pc)) {
@@ -3959,30 +3964,29 @@ extern "C" int HleDispatchCall(uint32_t pc) {
 
     auto masked_pc = pc & 0x1fff'ffff;
 
-    if (masked_pc == 0x1FC00180) {
-        psxBiosException180();
-    }
-
-    if (masked_pc == 0x80) {
-        psxBiosException80();
-        return 1;
-    }
-
-    if(masked_pc == 0xA0) {
-        return psxbios_invoke_A0();
-    }
-
-    if(masked_pc == 0xB0) {
-        return psxbios_invoke_B0();
-    }
-
-    if(masked_pc == 0xC0) {
-        return psxbios_invoke_C0();
-    }
-
-    if(masked_pc == 0x8000) {
-        psxBios_ExecRet();
-        return 1;
+    switch (masked_pc) {
+        case 0x1FC00180:
+            psxBiosException180();
+            return 0;
+        case 0x80:
+            psxBiosException80();
+            return 1;
+        case 0xA0:
+            return psxbios_invoke_A0();
+        case 0xB0:
+            return psxbios_invoke_B0();
+        case 0xC0:
+            return psxbios_invoke_C0();
+        case 0x8000:
+            psxBios_ExecRet();
+            return 1;
+        case 0x07a0:
+        case 0x0884:
+        case 0x0894:
+        case 0x4c54:
+            return psxbios_dummy();
+        default:
+            break;
     }
 
     if (is_hle_full_mode) {
