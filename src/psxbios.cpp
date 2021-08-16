@@ -3039,10 +3039,27 @@ void psxBiosInit() {
     psxBiosInitFull();
 }
 
-void psxBiosInitFull() {
-
+void psxBiosInitOnlyLib() {
     psxBiosInit_StdLib();
+    psxBiosInit_Lib();
+}
 
+// Intended to be called by the emulator as a basic bios tracing
+void psxBiosPrintCall(int table) {
+    int call = t1 & 0xff;
+    if (table == 0xA0) {
+        if (biosA0[call])
+            PSXBIOS_LOG("psxBios traceA: %s (0x%x, 0x%x, 0x%x, 0x%x)\n", biosA0n[call], a0, a1, a2, a3);
+    } else if (table == 0xB0) {
+        if (biosB0[call])
+            PSXBIOS_LOG("psxBios traceB: %s (0x%x, 0x%x, 0x%x, 0x%x)\n", biosB0n[call], a0, a1, a2, a3);
+    } else if (table == 0xC0) {
+        if (biosC0[call])
+            PSXBIOS_LOG("psxBios traceC: %s (0x%x, 0x%x, 0x%x, 0x%x)\n", biosC0n[call], a0, a1, a2, a3);
+    }
+}
+
+void psxBiosInit_Lib() {
     //biosA0[0x40] = psxBios_sys_a0_40;
     //biosA0[0x41] = psxBios_LoadTest;
 
@@ -3339,8 +3356,12 @@ void psxBiosInitFull() {
     //biosC0[0x1a] = psxBios_sys_c0_1a
     //biosC0[0x1b] = psxBios_KernelRedirect;
     //biosC0[0x1c] = psxBios_PatchAOTable;
-//************** THE END ***************************************
-/**/
+}
+
+void psxBiosInitFull() {
+
+    psxBiosInit_StdLib();
+    psxBiosInit_Lib();
 
 #if HLE_ENABLE_EVENT
     u32 base;
