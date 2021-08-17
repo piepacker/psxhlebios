@@ -1207,7 +1207,7 @@ void psxBios_malloc(HLE_BIOS_CALL_ARGS) { // 0x33
     // return pointer to allocated memory
     v0 = ((sptr)chunk - (sptr)PSX_RAM_START) + 4;
     v0|= 0x80000000;
-    //printf ("malloc %x,%x\n", v0, a0);
+    SysPrintf("malloc %x, size %x\n", v0, a0);
     pc0 = ra;
 }
 
@@ -3051,15 +3051,16 @@ void psxBiosInitOnlyLib() {
 
 // Intended to be called by the emulator as a basic bios tracing
 void psxBiosPrintCall(int table) {
+    bool print_all = true;
     int call = t1 & 0xff;
     if (table == 0xA0) {
-        if (biosA0[call])
+        if (print_all || biosA0[call])
             PSXBIOS_LOG("psxBios traceA: %s (0x%x, 0x%x, 0x%x, 0x%x)\n", biosA0n[call], a0, a1, a2, a3);
     } else if (table == 0xB0) {
-        if (biosB0[call])
+        if (print_all || biosB0[call])
             PSXBIOS_LOG("psxBios traceB: %s (0x%x, 0x%x, 0x%x, 0x%x)\n", biosB0n[call], a0, a1, a2, a3);
     } else if (table == 0xC0) {
-        if (biosC0[call])
+        if (print_all || biosC0[call])
             PSXBIOS_LOG("psxBios traceC: %s (0x%x, 0x%x, 0x%x, 0x%x)\n", biosC0n[call], a0, a1, a2, a3);
     }
 }
