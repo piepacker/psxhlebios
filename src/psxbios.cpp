@@ -3937,6 +3937,16 @@ void psxBiosException80() {
 bool psxbios_invoke_any(u32 callTableId, const HLE_BIOS_TABLE& table, const char * const names[256]) {
     int call = t1 & 0xff;
 
+    // Legend replaces malloc/free with custom implementation
+    if (callTableId == 0xA0 && call >= 0x33 && call <= 0x39) {
+        auto* ptr = (u32*)PSXM(TABLE_A0);
+        auto func = LoadFromLE(ptr[call]);
+        if ((func & 0xFF00'0000) == 0x8000'0000) {
+            PSXBIOS_LOG("skip callfunc %s (game custom version)\n", names[call]);
+            pc0 = func; // Jump to the function as we don't have the table dispatcher
+            return 1;
+        }
+    }
 
     if (table[call]) {
         auto yieldCallId = HleMakeYieldUid(callTableId, call, 0);
