@@ -55,6 +55,9 @@
 #   include <zlib.h>
 #endif
 
+#define TABLE_A0 0x0200
+#define TABLE_B0 0x0874
+#define TABLE_C0 0x0674
 
 template<typename T, typename T2>
 void StoreToLE(T& dest, const T2& src) {
@@ -2864,13 +2867,15 @@ void psxBios_Krom2RawAdd(HLE_BIOS_CALL_ARGS) { // 0x51
 void psxBios_GetC0Table(HLE_BIOS_CALL_ARGS) { // 56
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x56]);
 
-    v0 = 0x674; pc0 = ra;
+    v0 = TABLE_C0;
+    pc0 = ra;
 }
 
 void psxBios_GetB0Table(HLE_BIOS_CALL_ARGS) { // 57
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x57]);
 
-    v0 = 0x874; pc0 = ra;
+    v0 = TABLE_B0;
+    pc0 = ra;
 }
 
 #if HLE_ENABLE_MCD
@@ -3429,10 +3434,10 @@ void psxBiosInitFull() {
         // I'm not quite sure what this is about ... it's setting up some values into B0/C0 table, so I assume
         // it should only be performed when bypassing BIOS entirely --jstine
 
-        auto* ptr = (u32 *)PSXM(0x0874); // b0 table
+        auto* ptr = (u32 *)PSXM(TABLE_B0);
         StoreToLE(ptr[0], 0x4c54 - 0x884);
 
-        ptr = (u32 *)PSXM(0x0674); // c0 table
+        ptr = (u32 *)PSXM(TABLE_C0);
         StoreToLE(ptr[6], 0xc80);
 
         StoreToLE(psxMu32ref(0x0150), 0x160);
