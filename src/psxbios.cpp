@@ -3636,12 +3636,7 @@ void psxBiosLoadExecCdrom() {
         const char id[] = "PS-X EXE";
 
         psxFs_ReadSectorData2048(buf, sector);
-        memcpy(Ra0, buf, 76);
-        EXEC_DESCRIPTOR tdesc = *(EXEC_DESCRIPTOR*)(Ra0 + sizeof(PSX_EXE_HEADER));
-
-        if (auto* pa1 = (EXEC_DESCRIPTOR*)Ra1) {
-            *pa1 = tdesc;
-        }
+        EXEC_DESCRIPTOR tdesc = *(EXEC_DESCRIPTOR*)(buf + sizeof(PSX_EXE_HEADER));
 
         for(size_t i=0; i<sizeof(tdesc) / 4; ++i) {
             auto* val = (int32_t*)&tdesc + i;
