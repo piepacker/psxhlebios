@@ -3785,12 +3785,19 @@ u8 PAD_poll(int port, u8 in) {
         return PAD2_poll(in);
     }
 }
+
+bool PAD_connected(int port) {
+    return true;
+}
 #endif
 
 #if HLE_DUCKSTATION_IFC
+bool PAD_connected(int port) {
+    return g_pad.GetController(port) != nullptr;
+}
+
 u8 PAD_poll(int port, u8 in) {
     const u8 hiz = 0xff;
-    // PAD1_poll is `ack = controller->Transfer(data_out, &data_in);`
     auto controller = g_pad.GetController(port);
     if (controller == nullptr)
         return hiz;
@@ -3812,7 +3819,7 @@ void psxBios_PADpoll(int pad, u8* buf) {
     int bufcount;
 
     PAD_startPoll(pad);
-    buf[0] = 0;
+    buf[0] = PAD_connected(pad) ? 0 : hiz;
     buf[1] = PAD_poll(pad, 0x42);
     if (buf[1] == hiz) {
         bufcount = 0;
