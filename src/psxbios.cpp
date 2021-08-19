@@ -30,7 +30,6 @@
 
 // TODO: implement all system calls, count the exact CPU cycles of system calls.
 
-
 #include "libpsxbios.h"
 #include "psxhle-emu-ifc.h"
 
@@ -55,9 +54,24 @@
 #   include <zlib.h>
 #endif
 
-#define TABLE_A0 0x0200
-#define TABLE_B0 0x0874
-#define TABLE_C0 0x0674
+// Magic value to match the PSX "ABI"
+const u32 TCB_THREAD_FREE     = 0x1000;
+const u32 TCB_THREAD_RESERVED = 0x4000;
+const u32 SIZEOF_TCB = 0xC0;
+// The real size of the TCB is set in system;cnf (or by a call to table:0xA id:0x9C)
+u32 TCB_MAX_THREADS = 8;
+
+const u32 USEG_MASK   = 0x1FFF'FFFF;
+const u32 KSEG        = 0x8000'0000;
+const u32 G_PROCESS   = 0x0108;
+const u32 G_THREADS   = 0x0110;
+const u32 TABLE_A0    = 0x0200; // vector for call a0
+const u32 TABLE_B0    = 0x0874; // vector for call b0
+const u32 TABLE_C0    = 0x0674; // vector for call c0
+// Allocate some data at the end of the kernel space
+const u32 KERNEL_PCB  = 0xE000;                      // store process control block info here
+const u32 KERNEL_TCB  = KERNEL_PCB + 4;              // store thread control block info here
+const u32 KERNEL_HEAP = KERNEL_TCB + SIZEOF_TCB * 8; // Start address of remaining space
 
 template<typename T, typename T2>
 void StoreToLE(T& dest, const T2& src) {
@@ -365,11 +379,17 @@ typedef struct {
 */
 
 typedef struct {
-    s32 status;
-    s32 mode;
+    u32 status;
+    u32 _pad0;
     u32 reg[32];
     u32 func;
+    u32 gpr_hi;
+    u32 gpr_lo;
+    u32 SR;
+    u32 cause;
+    u32 _pad1[9];
 } TCB;
+static_assert(sizeof(TCB) == SIZEOF_TCB);
 
 struct DIRENTRY {
     char name[20];
@@ -417,11 +437,6 @@ static EvCB *SwEV; // 0xf4
 static EvCB *ThEV; // 0xff
 #endif
 
-#if HLE_ENABLE_THREAD
-static TCB ThreadCB[8];
-static int CurThread = 0;
-#endif
-
 #if HLE_ENABLE_HEAP
 static u32 heap_size = 0;
 static u32 *heap_addr = NULL;
@@ -451,6 +466,15 @@ static inline void softCall2(u32 pc) {
     u32 sra = ra;
     HleExecuteRecursive(pc, 0x80001000);
     ra = sra;
+}
+
+static inline void CP0_RFE() {
+    CP0_STATUS = (CP0_STATUS & 0xfffffff0) | ((CP0_STATUS & 0x3c) >> 2);
+}
+
+static inline void CP0_EXCEPTION() {
+    // Opposite of CP0_RFE
+    CP0_STATUS = (CP0_STATUS & 0xfffffff0) | ((CP0_STATUS & 0x0f) << 2);
 }
 
 static inline void DeliverEvent(u32 ev, u32 spec) {
@@ -1382,7 +1406,7 @@ _start:
             if (j > t2len-2) {
                 tmp2[j] = 0;
                 //raw_puts(tmp2);
-                fprintf(stderr, "Funky printf formatting at 0x%06x, msg=%s\n", a0 & 0x1fff'ffff, fmt);
+                fprintf(stderr, "Funky printf formatting at 0x%06x, msg=%s\n", a0 & USEG_MASK, fmt);
                 continue;   // resume processing.
             }
 
@@ -1433,7 +1457,7 @@ _start:
                 break;
 
                 case '%':
-                    fprintf(stderr, "Funky printf formatting at 0x%06x, msg=%s\n", a0 & 0x1fff'ffff, fmt);
+                    fprintf(stderr, "Funky printf formatting at 0x%06x, msg=%s\n", a0 & USEG_MASK, fmt);
                 break;
             }
             i++;
@@ -1568,7 +1592,7 @@ void psxBios_LoadExec(HLE_BIOS_CALL_ARGS) { // 51
     PSXBIOS_LOG("psxBios_%s: %s: %x,%x\n", biosA0n[0x51], Ra0, a1, a2);
     s_addr = a1; s_size = a2;
 
-    a1 = 0xf000;	
+    a1 = 0xf000;
     psxBios_Load(HLE_BIOS_INVOKE_ARGS);
 
     header->s_addr = s_addr;
@@ -1628,7 +1652,7 @@ void psxBios_GPU_dw(HLE_BIOS_CALL_ARGS) { // 0x46
     } while(--size);
 
     pc0 = ra;
-}  
+}
 
 void psxBios_mem2vram(HLE_BIOS_CALL_ARGS) { // 0x47
     int size;
@@ -2041,18 +2065,74 @@ void psxBios_DisableEvent(HLE_BIOS_CALL_ARGS) { // 0d
 #endif
 
 #if HLE_ENABLE_THREAD
+static void initThread() {
+    // hardcore implementation of threads. It matches PSX ABI to please "KKND Krossfire"
+    // that got the wonderful idea to update directly kernel global variable to switch
+    // between thread
+
+    // Setup Global pointer to process and thread blocks
+    StoreToLE(psxMu32ref(G_PROCESS), KERNEL_PCB | KSEG);
+    StoreToLE(psxMu32ref(G_THREADS), KERNEL_TCB | KSEG);
+
+    // Fill the process control block. Basically a pointer to current thread (so TCB slot 0)
+    StoreToLE(psxMu32ref(KERNEL_PCB), KERNEL_TCB | KSEG); // store pointer to process control block
+    // Fill the thread control block. Basically set RESERVED/FREE on threads
+    memset(PSXM(KERNEL_TCB), 0, SIZEOF_TCB * TCB_MAX_THREADS);
+    StoreToLE(psxMu32ref(KERNEL_TCB), TCB_THREAD_RESERVED);
+    for (auto i = 1u; i < TCB_MAX_THREADS; i++) {
+        StoreToLE(psxMu32ref(KERNEL_TCB + i * SIZEOF_TCB), TCB_THREAD_FREE);
+    }
+}
+
+// It would be doable to save registers into a C structure, however
+// using the PSX memory yield 2 advantages
+// 1/ Compatible with games that access register. Typically KNND writes the CP0_STATUS...
+// 2/ It is directly compatible with savestates as ram is savestat-ed
+static void saveContext(u32 tcb) {
+    auto context = (u32*)PSXM(tcb & USEG_MASK);
+    for (auto i = 0u; i < 32; i++) {
+        StoreToLE(context[i + 2], GPR_ARRAY[i]);
+    }
+    StoreToLE(context[2 + 32 + 0], ra);
+    StoreToLE(context[2 + 32 + 1], hi);
+    StoreToLE(context[2 + 32 + 2], lo);
+    // NOTE: thread switch shall be done in a syscall to be safe. We don't need the syscall
+    // for HLE. But we do need to update the CP0_STATUS bits accordingly
+    CP0_EXCEPTION();
+    StoreToLE(context[2 + 32 + 3], CP0_STATUS);
+    StoreToLE(context[2 + 32 + 4], CP0_CAUSE);
+}
+
+static void restoreContext(u32 tcb) {
+    auto context = (u32*)PSXM(tcb & USEG_MASK);
+    for (auto i = 0u; i < 32; i++) {
+        GPR_ARRAY[i] = LoadFromLE(context[i + 2]);
+    }
+    pc0 = LoadFromLE(context[2 + 32 + 0]);
+    hi = LoadFromLE(context[2 + 32 + 1]);
+    lo = LoadFromLE(context[2 + 32 + 2]);
+    CP0_STATUS = LoadFromLE(context[2 + 32 + 3]);
+    // NOTE: thread switch shall be done in a syscall to be safe. We don't need the syscall
+    // for HLE. But we do need to update the CP0_STATUS bits accordingly
+    // Test: "KKND Krossfire" will write the TCB CP0 sr reg manually.
+    CP0_RFE();
+    CP0_CAUSE = LoadFromLE(context[2 + 32 + 4]);
+}
+
 /*
  *	long OpenTh(long (*func)(), unsigned long sp, unsigned long gp);
  */
 
 void psxBios_OpenTh(HLE_BIOS_CALL_ARGS) { // 0e
-    int th;
-
-    for (th=1; th<8; th++) {
-        if (ThreadCB[th].status == 0) break;
+    // Get pointer of the TCB
+    u32 tcb = LoadFromLE(psxMu32ref(G_THREADS));
+    // Search an available thread
+    u32 th = 0;
+    for (; th < TCB_MAX_THREADS; th++, tcb += SIZEOF_TCB) {
+        if (LoadFromLE(psxMu32ref(tcb)) != TCB_THREAD_FREE) break;
     }
 
-    if (th == 8) {
+    if (th == TCB_MAX_THREADS) {
         // Feb 2019 - Added out-of-bounds fix caught by cppcheck:
         // When no free TCB is found, return 0xffffffff according to Nocash doc.
         PSXBIOS_LOG("psxBios_OpenTh() WARNING! No Free TCBs found!\n");
@@ -2060,14 +2140,19 @@ void psxBios_OpenTh(HLE_BIOS_CALL_ARGS) { // 0e
         pc0 = ra;
         return;
     }
-    PSXBIOS_LOG("psxBios_%s: %x\n", biosB0n[0x0e], th);
+    PSXBIOS_LOG("psxBios_%s: 0x%x (func:0x%x)\n", biosB0n[0x0e], tcb, a0);
 
-    ThreadCB[th].status = 1;
-    ThreadCB[th].func    = a0;
-    ThreadCB[th].reg[29] = a1;
-    ThreadCB[th].reg[28] = a2;
+    // Reserve the thread
+    auto context = (u32*)PSXM(tcb & USEG_MASK);
+    StoreToLE(context[0], TCB_THREAD_RESERVED);
+    // Update register info of the thread
+    StoreToLE(context[2 + 28], a2);     // GP
+    StoreToLE(context[2 + 29], a1);     // SP
+    StoreToLE(context[2 + 30], a1);     // FP
+    StoreToLE(context[2 + 32 + 0], a0); // PC
 
-    v0 = th; pc0 = ra;
+    v0 = th | 0xFF00'0000;
+    pc0 = ra;
 }
 
 /*
@@ -2076,17 +2161,17 @@ void psxBios_OpenTh(HLE_BIOS_CALL_ARGS) { // 0e
 
 void psxBios_CloseTh(HLE_BIOS_CALL_ARGS) { // 0f
     int th = a0 & 0xff;
+    dbg_check((u32)th < TCB_MAX_THREADS);
 
-    PSXBIOS_LOG("psxBios_%s: %x\n", biosB0n[0x0f], th);
+    // Get pointer of the TCB
+    u32 tcb = LoadFromLE(psxMu32ref(G_THREADS)) + th * SIZEOF_TCB;
+    // And mark current thread as free
+    StoreToLE(psxMu32ref(tcb), TCB_THREAD_FREE);
 
-    dbg_check((u32)th < 8);
+    PSXBIOS_LOG("psxBios_%s: 0x%x\n", biosB0n[0x0f], tcb);
 
     /* The return value is always 1 (even if the handle was already closed). */
     v0 = 1;
-    if (ThreadCB[th].status != 0) {
-        ThreadCB[th].status = 0;
-    }
-
     pc0 = ra;
 }
 
@@ -2096,29 +2181,24 @@ void psxBios_CloseTh(HLE_BIOS_CALL_ARGS) { // 0f
 
 void psxBios_ChangeTh(HLE_BIOS_CALL_ARGS) { // 10
     int th = a0 & 0xff;
-    PSXBIOS_LOG("psxBios_%s: %x\n", biosB0n[0x10], th);
-
-    dbg_check((u32)th < 8);
+    dbg_check((u32)th < TCB_MAX_THREADS);
 
     /* The return value is always 1. */
     v0 = 1;
 
-    if (ThreadCB[th].status == 0 || CurThread == th) {
-        pc0 = ra;
-    } else {
-        if ((u32)CurThread < 8) {
-            if (ThreadCB[CurThread].status == 2) {
-                ThreadCB[CurThread].status = 1;
-                ThreadCB[CurThread].func = ra;
-                memcpy(ThreadCB[CurThread].reg, GPR_ARRAY, sizeof(ThreadCB[CurThread].reg));
-            }
-        }
+    // Get current thread to save context
+    u32 pcb = LoadFromLE(psxMu32ref(G_PROCESS));
+    u32 tcb_current = LoadFromLE(psxMu32ref(pcb));
+    saveContext(tcb_current);
 
-        memcpy(GPR_ARRAY, ThreadCB[th].reg, sizeof(ThreadCB[CurThread].reg));
-        pc0 = ThreadCB[th].func;
-        ThreadCB[th].status = 2;
-        CurThread = th;
-    }
+    // Get to the new thread (will set pc0)
+    u32 tcb = LoadFromLE(psxMu32ref(G_THREADS)) + th * SIZEOF_TCB;
+    restoreContext(tcb);
+
+    // Save the new current thread
+    psxMu32ref(pcb) = tcb | KSEG;
+
+    PSXBIOS_LOG("psxBios_%s: from %x to %x\n", biosB0n[0x10], tcb_current, tcb);
 }
 #endif
 
@@ -2219,8 +2299,7 @@ void psxBios_ReturnFromException(HLE_BIOS_CALL_ARGS) { // 17
     pc0 = CP0_EPC;
     k0 = interrupt_r26;
 
-    CP0_STATUS = (CP0_STATUS & 0xfffffff0) |
-                ((CP0_STATUS & 0x3c) >> 2);
+    CP0_RFE();
 
 #if HLE_MEDNAFEN_IFC
     PSX_CPU->RecalcIPCache();
@@ -3388,9 +3467,7 @@ void psxBiosInitFull() {
 #endif
 
 #if HLE_ENABLE_THREAD
-    memset(ThreadCB, 0, sizeof(ThreadCB));
-    ThreadCB[0].status = 2; // main thread
-    CurThread = 0;
+    initThread();
 #endif
 
 #if HLE_ENABLE_ENTRYINT
@@ -3524,6 +3601,7 @@ const char* uri_find_domain_colon(const char* src) {
 void psxBiosLoadExecCdrom() {
     psxFs_CacheFilesystem();
 
+    bool updated_tcb = false;
     std::string exepath;
     if (auto sector = psxFs_GetFileSector("/SYSTEM.CNF;1")) {
         uint8_t buf[2048];
@@ -3548,12 +3626,21 @@ void psxBiosLoadExecCdrom() {
                     // probably it's a bug in the parsing logic here, rather than user error.
                     dbg_check(rvalue);
                 }
+                if (strcasecmp(lvalue, "tcb") == 0) {
+                    if (rvalue) {
+                        updated_tcb = true;
+                        TCB_MAX_THREADS = atoi(rvalue);
+                    }
+                }
             }
         }
     }
     else {
         printf("[INFO]: SYSTEM.CNF not found. Falling back on PSX.EXE...\n");
     }
+
+    if (updated_tcb)
+        initThread();
 
     if (exepath.empty()) {
         exepath = "cdrom:///PSX.EXE";
@@ -3904,8 +3991,7 @@ void psxBiosException80() {
             }
             pc0 = CP0_EPC + 4;
 
-            CP0_STATUS = (CP0_STATUS & 0xfffffff0) |
-                        ((CP0_STATUS & 0x3c) >> 2);
+            CP0_RFE();
             return;
 
         case 0xa:  // Reserved instruction exception
@@ -3924,8 +4010,7 @@ void psxBiosException80() {
     pc0 = CP0_EPC;
     if (CP0_CAUSE & 0x80000000) pc0+=4;
 
-    CP0_STATUS = (CP0_STATUS & 0xfffffff0) |
-                ((CP0_STATUS & 0x3c) >> 2);
+    CP0_RFE();
 }
 #endif
 
@@ -3994,7 +4079,7 @@ extern "C" int HleDispatchCall(uint32_t pc) {
         return 1;
     }
 
-    auto masked_pc = pc & 0x1fff'ffff;
+    auto masked_pc = pc & USEG_MASK;
 
     switch (masked_pc) {
         case 0x1FC00180:
@@ -4062,8 +4147,6 @@ void psxBiosFreeze(int Mode) {
     bfreezes(regs);
     bfreezes(SysIntRP);
     bfreezel(&CardState);
-    bfreezes(ThreadCB);
-    bfreezel(&CurThread);
     bfreezes(FDesc);
     bfreezel(&card_active_chan);
     bfreezel(&pad_stopped);
