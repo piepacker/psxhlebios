@@ -3642,7 +3642,7 @@ void psxBiosLoadExecCdrom() {
                 if (strcasecmp(lvalue, "tcb") == 0) {
                     if (rvalue) {
                         updated_tcb = true;
-                        TCB_MAX_THREADS = atoi(rvalue);
+                        TCB_MAX_THREADS = strtol(rvalue, nullptr, 16);
                     }
                 }
             }
