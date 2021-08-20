@@ -1832,6 +1832,12 @@ void psxBios__card_load(HLE_BIOS_CALL_ARGS) { // ac
 
     v0 = 1; pc0 = ra;
 }
+
+void psxBios__card_auto(HLE_BIOS_CALL_ARGS) { // 0xAD
+    PSXBIOS_LOG("psxBios_%s\n", biosA0n[0xAD]);
+
+    pc0 = ra;
+}
 #endif
 
 /* System calls B0 */
@@ -3284,7 +3290,7 @@ void psxBiosInit_Lib() {
     }
 #endif
 
-    //biosA0[0axd] = psxBios__card_auto;
+    biosA0[0xad] = psxBios__card_auto;
     //biosA0[0xae] = psxBios_bufs_cd_4;
     //biosA0[0xaf] = psxBios_sys_a0_af;
     //biosA0[0xb0] = psxBios_sys_a0_b0;
