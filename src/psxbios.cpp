@@ -2006,8 +2006,8 @@ void psxBios_WaitEvent(HLE_BIOS_CALL_ARGS) { // 0a
 
     if (EventCB[ev][spec].status == EVENT_STATUS_PENDING)
     {
-        /* Callback events (mode=EVENT_MODE_CALLBACK) do never set the ready flag (and thus WaitEvent would hang forever). */
-        if (!(EventCB[ev][spec].mode == EVENT_MODE_CALLBACK)) {
+        /* Callback events (mode=EVENT_MODE_CALLBACK) do never set the pending state (and thus WaitEvent would hang forever). */
+        if (EventCB[ev][spec].mode == EVENT_MODE_NO_CALLBACK) {
             EventCB[ev][spec].status = EVENT_STATUS_ENABLED;
         }
         v0 = 1;
@@ -2028,7 +2028,7 @@ void psxBios_TestEvent(HLE_BIOS_CALL_ARGS) { // 0b
     dbg_check(spec < 32);
 
     if (EventCB[ev][spec].status == EVENT_STATUS_PENDING) {
-        if (!(EventCB[ev][spec].mode == EVENT_MODE_CALLBACK)) {
+        if (EventCB[ev][spec].mode == EVENT_MODE_NO_CALLBACK) {
             EventCB[ev][spec].status = EVENT_STATUS_ENABLED;
         }
         v0 = 1;
