@@ -751,6 +751,8 @@ void psxBios_strncpy(HLE_BIOS_CALL_ARGS) { // 0x1a
 }
 
 void psxBios_strlen(HLE_BIOS_CALL_ARGS) { // 0x1b
+    //PSXBIOS_LOG("psxBios_%s: %s (%x)\n", biosA0n[0x1b], Ra0, a0);
+
     if (a0) {
         char *p = Ra0;
         v0 = 0;
@@ -896,6 +898,8 @@ void psxBios_bcopy(HLE_BIOS_CALL_ARGS) { // 0x27
 }
 
 void psxBios_bzero(HLE_BIOS_CALL_ARGS) { // 0x28
+    //PSXBIOS_LOG("psxBios_%s: %x %x\n", biosA0n[0x28], a0, a1);
+
     char *p = (char *)Ra0;
     v0 = a0;
     /* Same as memset here (See memset below) */
@@ -2989,7 +2993,7 @@ void psxBios__card_wait(HLE_BIOS_CALL_ARGS) { // 5d
  */
 
 void psxBios_SysEnqIntRP(HLE_BIOS_CALL_ARGS) { // 02
-    PSXBIOS_LOG("psxBios_%s: %x\n", biosC0n[0x02] ,a0);
+    PSXBIOS_LOG("psxBios_%s: %x (0x%x)\n", biosC0n[0x02] ,a0, a1);
 
     SysIntRP[a0] = a1;
 
@@ -3001,7 +3005,7 @@ void psxBios_SysEnqIntRP(HLE_BIOS_CALL_ARGS) { // 02
  */
 
 void psxBios_SysDeqIntRP(HLE_BIOS_CALL_ARGS) { // 03
-    PSXBIOS_LOG("psxBios_%s: %x\n", biosC0n[0x03], a0);
+    PSXBIOS_LOG("psxBios_%s: %x (0x%x)\n", biosC0n[0x03], a0, a1);
 
     SysIntRP[a0] = 0;
 
@@ -3130,17 +3134,20 @@ void psxBiosInitOnlyLib() {
 
 // Intended to be called by the emulator as a basic bios tracing
 void psxBiosPrintCall(int table) {
-    bool print_all = true;
+    bool print_all = false;
+    bool print_spam = false;
     int call = t1 & 0xff;
     if (table == 0xA0) {
         if (print_all || biosA0[call])
-            PSXBIOS_LOG("psxBios traceA: %s (0x%x, 0x%x, 0x%x, 0x%x)\n", biosA0n[call], a0, a1, a2, a3);
+            PSXBIOS_LOG("psxBios traceA: %s (0x%x, 0x%x, 0x%x, 0x%x) (EPC:0x%x, RA:0x%x)\n", biosA0n[call], a0, a1, a2, a3, CP0_EPC, ra);
     } else if (table == 0xB0) {
+        if (!print_spam && (call == 0xb || call == 0x17))
+            return;
         if (print_all || biosB0[call])
-            PSXBIOS_LOG("psxBios traceB: %s (0x%x, 0x%x, 0x%x, 0x%x)\n", biosB0n[call], a0, a1, a2, a3);
+            PSXBIOS_LOG("psxBios traceB: %s (0x%x, 0x%x, 0x%x, 0x%x) (EPC:0x%x, RA:0x%x)\n", biosB0n[call], a0, a1, a2, a3, CP0_EPC, ra);
     } else if (table == 0xC0) {
         if (print_all || biosC0[call])
-            PSXBIOS_LOG("psxBios traceC: %s (0x%x, 0x%x, 0x%x, 0x%x)\n", biosC0n[call], a0, a1, a2, a3);
+            PSXBIOS_LOG("psxBios traceC: %s (0x%x, 0x%x, 0x%x, 0x%x) (EPC:0x%x, RA:0x%x)\n", biosC0n[call], a0, a1, a2, a3, CP0_EPC, ra);
     }
 }
 
@@ -3943,21 +3950,37 @@ void psxBiosException80() {
     switch (excode) {
         case 0x00: // Interrupt
             interrupt_r26 = CP0_EPC;
-//			PSXCPU_LOG("interrupt\n");
+            // PSXCPU_LOG("interrupt\n");
             SaveRegs();
             sp = psxMu32(0x6c80); // create new stack for interrupt handlers
             biosInterrupt();
 
             for (int i = 0; i < 8; i++) {
-                if (SysIntRP[i]) {
-                    u32 *queue = (u32 *)PSXM(SysIntRP[i]);
+                if (!SysIntRP[i]) continue;
 
-                    s0 = queue[2];
-                    softCall(queue[1]);
-                    // FIXME: need to push current queue on the stack.
-                    //assert(false);
-                    //softCallYield(SCRI_biosException_Queue, queue[1]);
-                }
+                u32 *queue = (u32 *)PSXM(SysIntRP[i]);
+                u32 next = queue[0]; // FIXME queue shall be a linked list
+                u32 handler = queue[1];
+                u32 verifier = queue[2];
+
+                // In case someone got the idea to read those register to get info on current handler
+                s0 = handler;
+                s1 = verifier;
+
+                // Call first the verifier
+                if (!verifier)  continue;
+                softCall(verifier);
+
+                // Continue if verifier return 0
+                if (!v0) continue;
+
+                // Otherwise fire the handler
+                a0 = v0;
+                softCall(handler);
+
+                // FIXME: need to push current queue on the stack.
+                //assert(false);
+                //softCallYield(SCRI_biosException_Queue, handler);
             }
 
             if (jmp_int) {
@@ -3974,22 +3997,22 @@ void psxBiosException80() {
 
                 v0 = 1;
                 pc0 = ra;
-                return; 
+                return;
             }
             Write_ISTAT(0);
             break;
 
         case 0x08: // Syscall
-            PSXBIOS_LOG("syscall exp %x\n", a0);
+            //PSXBIOS_LOG("syscall exp %x\n", a0);
             switch (a0) {
                 case 1: // EnterCritical - disable irq's
                     /* Fixes Medievil 2 not loading up new game, Digimon World not booting up and possibly others */
                     v0 = (CP0_STATUS & 0x404) == 0x404;
-                    CP0_STATUS &= ~0x404; 
+                    CP0_STATUS &= ~0x404;
                     break;
 
                 case 2: // ExitCritical - enable irq's
-                    CP0_STATUS |= 0x404; 
+                    CP0_STATUS |= 0x404;
                     break;
 
                 /* Normally this should cover SYS(00h, SYS(04h but they don't do anything relevant so... */
