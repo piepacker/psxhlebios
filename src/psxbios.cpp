@@ -2140,7 +2140,7 @@ void psxBios_OpenTh(HLE_BIOS_CALL_ARGS) { // 0e
     // Search an available thread
     u32 th = 0;
     for (; th < TCB_MAX_THREADS; th++, tcb += SIZEOF_TCB) {
-        if (LoadFromLE(psxMu32ref(tcb)) != TCB_THREAD_FREE) break;
+        if (LoadFromLE(psxMu32ref(tcb)) == TCB_THREAD_FREE) break;
     }
 
     if (th == TCB_MAX_THREADS) {
