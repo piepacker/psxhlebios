@@ -218,7 +218,7 @@ const char * const biosB0n[256] = {
 // 0x40
     "cd",				"format",		"firstfile",	"nextfile",
     "rename",			"delete",		"undelete",		"AddDevice",
-    "RemoteDevice",		"PrintInstalledDevices", "InitCARD", "StartCARD",
+    "RemoveDevice",		"PrintInstalledDevices", "InitCARD", "StartCARD",
     "StopCARD",			"sys_b0_4d",	"_card_write",	"_card_read",
 // 0x50
     "_new_card",		"Krom2RawAdd",	"sys_b0_52",	"sys_b0_53",
@@ -2813,6 +2813,19 @@ void psxBios_delete(HLE_BIOS_CALL_ARGS) { // 45
     pc0 = ra;
 }
 
+void psxBios_AddDevice(HLE_BIOS_CALL_ARGS) { // 47
+    u32 device = LoadFromLE(psxMu32ref(a0));
+    PSXBIOS_LOG("psxBios_%s: %x (%s)\n", biosB0n[0x47], a0, (char *)PSXM(device));
+    // Ridge Racer Type 4 used this function to add a "sio console" device
+    // Probably doesn't need more
+    pc0 = ra;
+}
+
+void psxBios_RemoveDevice(HLE_BIOS_CALL_ARGS) { // 47
+    PSXBIOS_LOG("psxBios_%s: %x (%s)\n", biosB0n[0x47], a0, Ra0);
+    pc0 = ra;
+}
+
 void psxBios_InitCARD(HLE_BIOS_CALL_ARGS) { // 4a
     PSXBIOS_LOG("psxBios_%s: %x\n", biosB0n[0x4a], a0);
 
@@ -3378,8 +3391,8 @@ void psxBiosInit_Lib() {
     //biosB0[0x3e] = psxBios_gets;
     //biosB0[0x40] = psxBios_cd;
     //biosB0[0x46] = psxBios_undelete;
-    //biosB0[0x47] = psxBios_AddDevice;
-    //biosB0[0x48] = psxBios_RemoteDevice;
+    biosB0[0x47] = psxBios_AddDevice;
+    biosB0[0x48] = psxBios_RemoveDevice;
     //biosB0[0x49] = psxBios_PrintInstalledDevices;
 #endif
 
