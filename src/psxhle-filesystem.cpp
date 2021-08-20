@@ -267,6 +267,11 @@ void psxFs_CacheFilesystem() {
 fs::path psxFs_Canonicalize(const char* src) {
     if (!src) return {};
 
+    constexpr char mnt_cdrom[] = "cdrom:";
+    if (strncasecmp(src, mnt_cdrom, sizeof(mnt_cdrom) - 1) == 0) {
+        src += sizeof(mnt_cdrom);
+    }
+
     // skip rooted slash. All paths are assumed to be rooted.
     // (there is no CWD mechanic within the psFs)
 
@@ -307,6 +312,10 @@ psdisc_sec_t psxFs_GetFileSector(const char* path) {
     auto canon = psxFs_Canonicalize(path);
     if (auto it = m_filesByFullpath.find(canon); it != m_filesByFullpath.end()) {
         return it->second.start_sector;
+    }
+    log_error("psxFs_GetFileSector: Failed to find %s (%s)\n", path, canon.c_str());
+    for (const auto& it : m_filesByFullpath) {
+        log_host(" > %s", it.first.c_str());
     }
     return 0;
 }
