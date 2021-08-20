@@ -366,8 +366,8 @@ typedef struct {
 #define EvStACTIVE	0x2000
 #define EvStALREADY 0x4000
 
-#define EvMdINTR	0x1000
-#define EvMdNOINTR	0x2000
+const int EVENT_MODE_CALLBACK    = 0x1000;
+const int EVENT_MODE_NO_CALLBACK = 0x2000;
 
 /*
 typedef struct {
@@ -482,10 +482,11 @@ static inline void DeliverEvent(u32 ev, u32 spec) {
 
     if (EventCB[ev][spec].status != EvStACTIVE) return;
 
-//	EventCB[ev][spec].status = EvStALREADY;
-    if (EventCB[ev][spec].mode == EvMdINTR) {
+    // EventCB[ev][spec].status = EvStALREADY;
+    if (EventCB[ev][spec].mode == EVENT_MODE_CALLBACK) {
         softCall2(EventCB[ev][spec].fhandler);
-    } else EventCB[ev][spec].status = EvStALREADY;
+    } else
+        EventCB[ev][spec].status = EvStALREADY;
 }
 
 void psxBios_todigit(HLE_BIOS_CALL_ARGS) // 0x0a
@@ -1999,8 +2000,8 @@ void psxBios_WaitEvent(HLE_BIOS_CALL_ARGS) { // 0a
 
     if (EventCB[ev][spec].status == EvStALREADY)
     {
-        /* Callback events (mode=EvMdINTR) do never set the ready flag (and thus WaitEvent would hang forever). */
-        if (!(EventCB[ev][spec].mode == EvMdINTR)) {
+        /* Callback events (mode=EVENT_MODE_CALLBACK) do never set the ready flag (and thus WaitEvent would hang forever). */
+        if (!(EventCB[ev][spec].mode == EVENT_MODE_CALLBACK)) {
             EventCB[ev][spec].status = EvStACTIVE;
         }
         v0 = 1;
@@ -2021,7 +2022,7 @@ void psxBios_TestEvent(HLE_BIOS_CALL_ARGS) { // 0b
     dbg_check(spec < 32);
 
     if (EventCB[ev][spec].status == EvStALREADY) {
-        if (!(EventCB[ev][spec].mode == EvMdINTR)) {
+        if (!(EventCB[ev][spec].mode == EVENT_MODE_CALLBACK)) {
             EventCB[ev][spec].status = EvStACTIVE;
         }
         v0 = 1;
@@ -2335,8 +2336,7 @@ void psxBios_UnDeliverEvent(HLE_BIOS_CALL_ARGS) { // 0x20
 
     PSXBIOS_LOG("psxBios_%s %x,%x\n", biosB0n[0x20], ev, spec);
 
-    if (EventCB[ev][spec].status == EvStALREADY &&
-        EventCB[ev][spec].mode == EvMdNOINTR)
+    if (EventCB[ev][spec].status == EvStALREADY && EventCB[ev][spec].mode == EVENT_MODE_NO_CALLBACK)
         EventCB[ev][spec].status = EvStACTIVE;
 
     pc0 = ra;
@@ -3907,8 +3907,12 @@ void biosInterrupt() {
 //	}
 
     if (istat & 0x1) { // Vsync
-        if (RcEV[3][1].status == EvStACTIVE) {
-            softCall(RcEV[3][1].fhandler);
+        auto& event = RcEV[3][1];
+        if (event.status == EvStACTIVE) {
+            if (event.mode == EVENT_MODE_CALLBACK)
+                softCall(event.fhandler);
+            else
+                event.status = EvStALREADY;
             //assert(false);
             //softCallYield(SCRI_biosInterrupt_Vsync, RcEV[3][1].fhandler);
 //			hwWrite32(0x1f801070, ~(1));
@@ -3919,8 +3923,12 @@ void biosInterrupt() {
 
         for (int i = 0; i < 3; i++) {
             if (Read_ISTAT() & (1 << (i + 4))) {
-                if (RcEV[i][1].status == EvStACTIVE) {
-                    softCall(RcEV[i][1].fhandler);
+                auto& event = RcEV[i][1];
+                if (event.status == EvStACTIVE) {
+                    if (event.mode == EVENT_MODE_CALLBACK)
+                        softCall(event.fhandler);
+                    else
+                        event.status = EvStALREADY;
                     //assert(false);
                     // FIXME: need to push the current rcnt on the stack.
                     //softCallYield(SCRI_biosInterrupt_Rcnt, RcEV[i][1].fhandler);
