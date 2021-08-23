@@ -57,21 +57,25 @@
 // Magic value to match the PSX "ABI"
 const u32 TCB_THREAD_FREE     = 0x1000;
 const u32 TCB_THREAD_RESERVED = 0x4000;
-const u32 SIZEOF_TCB = 0xC0;
+const u32 SIZEOF_TCB          = 0xC0;
+const u32 SIZEOF_IRQ_HANDLER  = 0x8;
 // The real size of the TCB is set in system;cnf (or by a call to table:0xA id:0x9C)
 u32 TCB_MAX_THREADS = 8;
+const u32 MAX_IRQ_HANDLER = 4;
 
 const u32 USEG_MASK   = 0x1FFF'FFFF;
 const u32 KSEG        = 0x8000'0000;
+const u32 G_HANDLERS  = 0x0100;
 const u32 G_PROCESS   = 0x0108;
 const u32 G_THREADS   = 0x0110;
 const u32 TABLE_A0    = 0x0200; // vector for call a0
 const u32 TABLE_B0    = 0x0874; // vector for call b0
 const u32 TABLE_C0    = 0x0674; // vector for call c0
 // Allocate some data at the end of the kernel space
-const u32 KERNEL_PCB  = 0xE000;                      // store process control block info here
-const u32 KERNEL_TCB  = KERNEL_PCB + 4;              // store thread control block info here
-const u32 KERNEL_HEAP = KERNEL_TCB + SIZEOF_TCB * 8; // Start address of remaining space
+const u32 KERNEL_PCB         = 0xE000;                                                    // store process control block info here
+const u32 KERNEL_TCB         = KERNEL_PCB + 4;                                            // store thread control block info here
+const u32 KERNEL_IRQ_HANDLER = KERNEL_TCB + SIZEOF_TCB * 8;                               // store irq handlers info here
+const u32 KERNEL_HEAP        = KERNEL_IRQ_HANDLER + SIZEOF_IRQ_HANDLER * MAX_IRQ_HANDLER; // Start address of remaining space
 
 template<typename T, typename T2>
 void StoreToLE(T& dest, const T2& src) {
@@ -410,7 +414,6 @@ typedef struct {
 
 #if HLE_ENABLE_ENTRYINT
 static u32 jmp_int = 0;     // mips address
-static u32 SysIntRP[8];
 #endif
 
 #if HLE_ENABLE_PAD || HLE_FULL
@@ -3013,10 +3016,21 @@ void psxBios__card_wait(HLE_BIOS_CALL_ARGS) { // 5d
 
 void psxBios_SysEnqIntRP(HLE_BIOS_CALL_ARGS) { // 02
     PSXBIOS_LOG("psxBios_%s: %x (0x%x)\n", biosC0n[0x02] ,a0, a1);
+    dbg_check(a0 < MAX_IRQ_HANDLER);
 
-    SysIntRP[a0] = a1;
+    // Get the pointer to 'a0' priority linked list
+    u32 handlers = LoadFromLE(psxMu32ref(G_HANDLERS));
+    u32 handler_ptr = handlers + a0 * SIZEOF_IRQ_HANDLER;
 
-    v0 = 0; pc0 = ra;
+    // Get current head
+    u32 head = psxMu32ref(handler_ptr);
+    // Store the new element as the new head
+    StoreToLE(psxMu32ref(handler_ptr), a1);
+    // Link new element to previous head
+    StoreToLE(psxMu32ref(a1), head);
+
+    v0 = 0;
+    pc0 = ra;
 }
 
 /*
@@ -3025,17 +3039,49 @@ void psxBios_SysEnqIntRP(HLE_BIOS_CALL_ARGS) { // 02
 
 void psxBios_SysDeqIntRP(HLE_BIOS_CALL_ARGS) { // 03
     PSXBIOS_LOG("psxBios_%s: %x (0x%x)\n", biosC0n[0x03], a0, a1);
+    dbg_check(a0 < MAX_IRQ_HANDLER);
 
-    SysIntRP[a0] = 0;
+    // Note: It is implemented as intended but original PSX might be buggy
+    // No guarantee on returned value (I used void)
 
-    v0 = 0; pc0 = ra;
+    // Get the pointer to 'a0' priority linked list
+    u32 handlers = LoadFromLE(psxMu32ref(G_HANDLERS));
+    u32 handler_ptr = handlers + a0 * SIZEOF_IRQ_HANDLER;
+
+    // Get current head
+    u32 head = psxMu32ref(handler_ptr);
+    if (head == 0) {
+        // null pointer, nop
+        ;
+    } else if (head == a1) {
+        // delete the head
+        u32 next = LoadFromLE(psxMu32ref(head));
+        StoreToLE(psxMu32ref(handler_ptr), next);
+    } else {
+        // Search the list to remove the element
+        u32 prev = head;
+        u32 next = LoadFromLE(psxMu32ref(prev));
+        while (next != 0 && next != a1) {
+            // Increment linked list
+            prev = next;
+            next = LoadFromLE(psxMu32ref(prev));
+        }
+        // If found remove the entry
+        if (next == a1) {
+            u32 next_next = LoadFromLE(psxMu32ref(next));
+            StoreToLE(psxMu32ref(prev), next_next);
+        }
+    }
+
+    v0 = 0;
+    pc0 = ra;
 }
 #endif
 
 using VoidFnptr = void (*)();
 using HleBiosFnptr = void (*)(HLE_BIOS_CALL_ARGS);
 
-using HLE_BIOS_TABLE = HleBiosFnptr[256]; 
+using HLE_BIOS_TABLE = HleBiosFnptr[256];
 
 HLE_BIOS_TABLE biosA0 = {};
 HLE_BIOS_TABLE biosB0 = {};
@@ -3497,8 +3543,15 @@ void psxBiosInitFull() {
 #endif
 
 #if HLE_ENABLE_ENTRYINT
-    memset(SysIntRP, 0, sizeof(SysIntRP));
     jmp_int = 0;
+    // Save IRQ handlers info into PSX memory
+    // 1/ allow game to use it outside of OS
+    // 2/ Compatible with savestate without extra burden
+    //
+    // Setup Global pointer to irqs handlers
+    StoreToLE(psxMu32ref(G_HANDLERS), KERNEL_IRQ_HANDLER | KSEG);
+    // Fill the IRQ handlers info with 0
+    memset(PSXM(KERNEL_IRQ_HANDLER), 0, SIZEOF_IRQ_HANDLER * MAX_IRQ_HANDLER);
 #endif
 
 #if HLE_ENABLE_PAD
@@ -3968,46 +4021,50 @@ void psxBiosException180() {
 
 void psxBiosException80() {
 
-  static const char* const exmne[16] =
-  {
-   "INT", "MOD", "TLBL", "TLBS", "ADEL", "ADES", "IBE", "DBE", "SYSCALL", "BP", "RI", "COPU", "OV", NULL, NULL, NULL
-  };
+    static const char* const exmne[16] =
+    {
+        "INT", "MOD", "TLBL", "TLBS", "ADEL", "ADES", "IBE", "DBE", "SYSCALL", "BP", "RI", "COPU", "OV", NULL, NULL, NULL
+    };
 
     auto excode = (CP0_CAUSE & 0x3c) >> 2;
     switch (excode) {
-        case 0x00: // Interrupt
+        case 0x00: { // Interrupt
             interrupt_r26 = CP0_EPC;
             // PSXCPU_LOG("interrupt\n");
             SaveRegs();
             sp = psxMu32(0x6c80); // create new stack for interrupt handlers
             biosInterrupt();
 
-            for (int i = 0; i < 8; i++) {
-                if (!SysIntRP[i]) continue;
+            u32 handler_ptr = LoadFromLE(psxMu32ref(G_HANDLERS));
 
-                u32 *queue = (u32 *)PSXM(SysIntRP[i]);
-                u32 next = queue[0]; // FIXME queue shall be a linked list
-                u32 handler = queue[1];
-                u32 verifier = queue[2];
+            for (u32 i = 0; i < MAX_IRQ_HANDLER; i++, handler_ptr += SIZEOF_IRQ_HANDLER) {
+                u32 head = psxMu32ref(handler_ptr);
+                while (head != 0) {
+                    u32 *queue = (u32 *)PSXM(head);
+                    head = queue[0]; // Update linked list pointer
 
-                // In case someone got the idea to read those register to get info on current handler
-                s0 = handler;
-                s1 = verifier;
+                    u32 handler = queue[1];
+                    u32 verifier = queue[2];
 
-                // Call first the verifier
-                if (!verifier)  continue;
-                softCall(verifier);
+                    // In case someone got the idea to read those register to get info on current handler
+                    s0 = handler;
+                    s1 = verifier;
 
-                // Continue if verifier return 0
-                if (!v0) continue;
+                    // Call first the verifier
+                    if (!verifier)  continue;
+                    softCall(verifier);
 
-                // Otherwise fire the handler
-                a0 = v0;
-                softCall(handler);
+                    // Continue if verifier return 0
+                    if (!v0) continue;
 
-                // FIXME: need to push current queue on the stack.
-                //assert(false);
-                //softCallYield(SCRI_biosException_Queue, handler);
+                    // Otherwise fire the handler
+                    a0 = v0;
+                    softCall(handler);
+
+                    // FIXME: need to push current queue on the stack.
+                    //assert(false);
+                    //softCallYield(SCRI_biosException_Queue, handler);
+                }
             }
 
             if (jmp_int) {
@@ -4028,6 +4085,7 @@ void psxBiosException80() {
             }
             Write_ISTAT(0);
             break;
+        }
 
         case 0x08: // Syscall
             //PSXBIOS_LOG("syscall exp %x\n", a0);
@@ -4202,7 +4260,6 @@ void psxBiosFreeze(int Mode) {
     bfreezel(&pad_buf1len);
     bfreezel(&pad_buf2len);
     bfreezes(regs);
-    bfreezes(SysIntRP);
     bfreezel(&CardState);
     bfreezes(FDesc);
     bfreezel(&card_active_chan);
