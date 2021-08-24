@@ -106,6 +106,10 @@ struct HleState {
     // Entry point
     u32 jmp_int; // PSX address
     // Pad
+    u32 pad_stopped;
+    u32 pad_buf;  // PSX address
+    u32 pad_buf1; // PSX address
+    u32 pad_buf2; // PSX address
     // Memory Card
     // Heap
     u32 heap_size;
@@ -436,13 +440,6 @@ typedef struct {
     u32  size;
     u32  mcfile;
 } FileDesc;
-
-#if HLE_ENABLE_PAD || HLE_FULL
-static int *pad_buf = NULL;
-static u8 *pad_buf1 = NULL, *pad_buf2 = NULL;
-static int pad_buf1len, pad_buf2len;
-static int pad_stopped = 1;
-#endif
 
 #if HLE_ENABLE_MCD
 static int CardState = -1;
@@ -2235,10 +2232,10 @@ void psxBios_ChangeTh(HLE_BIOS_CALL_ARGS) { // 10
 void psxBios_InitPAD(HLE_BIOS_CALL_ARGS) { // 0x12
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x12]);
 
-    pad_buf1 = (u8*)Ra0;
-    pad_buf1len = a1;
-    pad_buf2 = (u8*)Ra2;
-    pad_buf2len = a3;
+    g->pad_buf1 = a0;
+    // a1 contains size of pad_buf1
+    g->pad_buf2 = a2;
+    // a3 contains size of pad_buf2
 
     v0 = 1; pc0 = ra;
 }
@@ -2246,7 +2243,7 @@ void psxBios_InitPAD(HLE_BIOS_CALL_ARGS) { // 0x12
 void psxBios_StartPAD(HLE_BIOS_CALL_ARGS) { // 13
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x13]);
 
-    pad_stopped = 0;
+    g->pad_stopped = 0;
     Write_IMASK((unsigned short)(Read_IMASK() | 0x1));
     CP0_STATUS |= 0x401;
     pc0 = ra;
@@ -2255,9 +2252,9 @@ void psxBios_StartPAD(HLE_BIOS_CALL_ARGS) { // 13
 void psxBios_StopPAD(HLE_BIOS_CALL_ARGS) { // 14
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x14]);
 
-    pad_stopped = 1;
-    pad_buf1 = NULL;
-    pad_buf2 = NULL;
+    g->pad_stopped = 1;
+    g->pad_buf1 = 0;
+    g->pad_buf2 = 0;
     pc0 = ra;
 }
 
@@ -2272,8 +2269,8 @@ void psxBios_PAD_init(HLE_BIOS_CALL_ARGS) { // 15
     }
 
     Write_IMASK((u16)(Read_IMASK() | 0x1));
-    pad_buf = (int *)Ra1;
-    *pad_buf = -1;
+    g->pad_buf = a1;
+    *(int*)PSXM(g->pad_buf) = -1;
     CP0_STATUS |= 0x401;
     v0 = 2;
     pc0 = ra;
@@ -3572,11 +3569,10 @@ void psxBiosInitFull() {
 #endif
 
 #if HLE_ENABLE_PAD
-    pad_stopped = 1;
-    pad_buf = NULL;
-    pad_buf1 = NULL;
-    pad_buf2 = NULL;
-    pad_buf1len = pad_buf2len = 0;
+    g->pad_stopped = 1;
+    g->pad_buf  = 0;
+    g->pad_buf1 = 0;
+    g->pad_buf2 = 0;
 #endif
 
 #if HLE_ENABLE_HEAP
@@ -3947,8 +3943,8 @@ void biosInterrupt() {
     // someone removed the Vsync condition gate below (likely some hack) --jstine
 
 //	if (istat & 0x1) { // Vsync
-        if (pad_buf != NULL) {
-            u32 *buf = (u32*)pad_buf;
+        if (g->pad_buf) {
+            u32 *buf = (u32*)PSXM(g->pad_buf);
 
         #if HLE_ENABLE_PAD
             PAD_startPoll(0);
@@ -3981,14 +3977,14 @@ void biosInterrupt() {
         #endif
         }
 
-        if (!pad_stopped)  {
+        if (!g->pad_stopped)  {
     #if HLE_ENABLE_PAD
-            if (pad_buf1) {
-                psxBios_PADpoll(0, pad_buf1);
+            if (g->pad_buf1) {
+                psxBios_PADpoll(0, PSXM(g->pad_buf1));
             }
 
-            if (pad_buf2) {
-                psxBios_PADpoll(1, pad_buf2);
+            if (g->pad_buf2) {
+                psxBios_PADpoll(1, PSXM(g->pad_buf2));
             }
     #endif
         }
@@ -4268,15 +4264,9 @@ extern "C" int HleDispatchCall(uint32_t pc) {
 void psxBiosFreeze(int Mode) {
     u32 base = 0x40000;
 
-    bfreezepsxMptr(pad_buf, int);
-    bfreezepsxMptr(pad_buf1, u8);
-    bfreezepsxMptr(pad_buf2, u8);
-    bfreezel(&pad_buf1len);
-    bfreezel(&pad_buf2len);
     bfreezes(regs);
     bfreezel(&CardState);
     bfreezes(FDesc);
     bfreezel(&card_active_chan);
-    bfreezel(&pad_stopped);
 }
 #endif
