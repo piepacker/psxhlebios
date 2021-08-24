@@ -118,6 +118,7 @@ struct HleState {
     u32 heap_addr; // PSX address
     // File
     // Exception/IRQ
+    u32 regs[36]; // 32 GPR + lo + hi + pc + npc (duck)
     // Misc
 };
 static HleState* g;
@@ -442,8 +443,6 @@ typedef struct {
     u32  size;
     u32  mcfile;
 } FileDesc;
-
-static u32 regs[36];
 
 #if HLE_ENABLE_EVENT
 static EvCB *EventCB;
@@ -2293,13 +2292,13 @@ static bool s_saved = 0;
 static inline void SaveRegs() {
     dbg_check(!s_saved);
     s_saved = 1;
-    memcpy(regs, GPR_ARRAY, sizeof(GPR_ARRAY));
+    memcpy(g->regs, GPR_ARRAY, sizeof(GPR_ARRAY));
 #if HLE_MEDNAFEN_IFC
-    regs[33] = lo;
-    regs[34] = hi;
+    g->regs[33] = lo;
+    g->regs[34] = hi;
 #endif
 
-    regs[35] = pc0;
+    g->regs[35] = pc0;
 
     interrupt_r26 = CP0_EPC;
 }
@@ -2307,10 +2306,10 @@ static inline void SaveRegs() {
 static inline void LoadRegs() {
     dbg_check(s_saved);
     s_saved = 0;
-    memcpy(GPR_ARRAY, regs, sizeof(GPR_ARRAY));
+    memcpy(GPR_ARRAY, g->regs, sizeof(GPR_ARRAY));
 #if HLE_MEDNAFEN_IFC
-    lo = regs[33];
-    hi = regs[34];
+    lo = g->regs[33];
+    hi = g->regs[34];
 #endif
 }
 
@@ -4261,7 +4260,6 @@ extern "C" int HleDispatchCall(uint32_t pc) {
 void psxBiosFreeze(int Mode) {
     u32 base = 0x40000;
 
-    bfreezes(regs);
     bfreezes(FDesc);
 }
 #endif
