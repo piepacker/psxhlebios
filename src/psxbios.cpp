@@ -111,6 +111,8 @@ struct HleState {
     u32 pad_buf1; // PSX address
     u32 pad_buf2; // PSX address
     // Memory Card
+    u32 cardState;
+    u32 card_active_chan;
     // Heap
     u32 heap_size;
     u32 heap_addr; // PSX address
@@ -440,11 +442,6 @@ typedef struct {
     u32  size;
     u32  mcfile;
 } FileDesc;
-
-#if HLE_ENABLE_MCD
-static int CardState = -1;
-static u32 card_active_chan;
-#endif
 
 static u32 regs[36];
 
@@ -1812,8 +1809,8 @@ void psxBios__card_info(HLE_BIOS_CALL_ARGS) { // ab
     PSXBIOS_LOG("psxBios_%s: %x\n", biosA0n[0xab], a0);
 
     u32 ret, port;
-    card_active_chan = a0;
-    port = card_active_chan >> 4;
+    g->card_active_chan = a0;
+    port = g->card_active_chan >> 4;
 
     switch (port) {
     case 0x0:
@@ -1823,7 +1820,7 @@ void psxBios__card_info(HLE_BIOS_CALL_ARGS) { // ab
             ret = 0x8;
         break;
     default:
-        PSXBIOS_LOG("psxBios_%s: UNKNOWN PORT 0x%x\n", biosA0n[0xab], card_active_chan);
+        PSXBIOS_LOG("psxBios_%s: UNKNOWN PORT 0x%x\n", biosA0n[0xab], g->card_active_chan);
         ret = 0x11;
         break;
     }
@@ -1840,7 +1837,7 @@ void psxBios__card_info(HLE_BIOS_CALL_ARGS) { // ab
 void psxBios__card_load(HLE_BIOS_CALL_ARGS) { // ac
     PSXBIOS_LOG("psxBios_%s: %x\n", biosA0n[0xac], a0);
 
-    card_active_chan = a0;
+    g->card_active_chan = a0;
 
 //	DeliverEvent(0x11, 0x2); // 0xf0000011, 0x0004
     DeliverEvent(0x81, 0x2); // 0xf4000001, 0x0004
@@ -2844,7 +2841,7 @@ void psxBios_RemoveDevice(HLE_BIOS_CALL_ARGS) { // 47
 void psxBios_InitCARD(HLE_BIOS_CALL_ARGS) { // 4a
     PSXBIOS_LOG("psxBios_%s: %x\n", biosB0n[0x4a], a0);
 
-    CardState = 0;
+    g->cardState = 0;
 
     pc0 = ra;
 }
@@ -2852,7 +2849,7 @@ void psxBios_InitCARD(HLE_BIOS_CALL_ARGS) { // 4a
 void psxBios_StartCARD(HLE_BIOS_CALL_ARGS) { // 4b
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x4b]);
 
-    if (CardState == 0) CardState = 1;
+    if (g->cardState == 0) g->cardState = 1;
 
     pc0 = ra;
 }
@@ -2860,7 +2857,7 @@ void psxBios_StartCARD(HLE_BIOS_CALL_ARGS) { // 4b
 void psxBios_StopCARD(HLE_BIOS_CALL_ARGS) { // 4c
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x4c]);
 
-    if (CardState == 1) CardState = 0;
+    if (g->cardState == 1) g->cardState = 0;
 
     pc0 = ra;
 }
@@ -2880,7 +2877,7 @@ void psxBios__card_write(HLE_BIOS_CALL_ARGS) { // 0x4e
         v0 = 0; pc0 = ra;
         return;
     }
-    card_active_chan = a0;
+    g->card_active_chan = a0;
     port = a0 >> 4;
 
     if (pa2) {
@@ -2909,7 +2906,7 @@ void psxBios__card_read(HLE_BIOS_CALL_ARGS) { // 0x4f
         v0 = 0; pc0 = ra;
         return;
     }
-    card_active_chan = a0;
+    g->card_active_chan = a0;
     port = a0 >> 4;
 
     if (pa2) {
@@ -2999,14 +2996,14 @@ void psxBios_GetB0Table(HLE_BIOS_CALL_ARGS) { // 57
 void psxBios__card_chan(HLE_BIOS_CALL_ARGS) { // 0x58
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x58]);
 
-    v0 = card_active_chan;
+    v0 = g->card_active_chan;
     pc0 = ra;
 }
 
 void psxBios__card_status(HLE_BIOS_CALL_ARGS) { // 5c
     PSXBIOS_LOG("psxBios_%s: %x\n", biosB0n[0x5c], a0);
 
-    v0 = card_active_chan;
+    v0 = g->card_active_chan;
     pc0 = ra;
 }
 
@@ -3581,8 +3578,8 @@ void psxBiosInitFull() {
 #endif
 
 #if HLE_ENABLE_MCD
-    CardState = -1;
-    card_active_chan = 0;
+    g->cardState = ~0;
+    g->card_active_chan = 0;
 #endif
 
 #if HLE_ENABLE_MCD
@@ -4265,8 +4262,6 @@ void psxBiosFreeze(int Mode) {
     u32 base = 0x40000;
 
     bfreezes(regs);
-    bfreezel(&CardState);
     bfreezes(FDesc);
-    bfreezel(&card_active_chan);
 }
 #endif
