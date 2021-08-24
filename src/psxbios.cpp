@@ -54,28 +54,38 @@
 #   include <zlib.h>
 #endif
 
+const u32 USEG_MASK   = 0x1FFF'FFFF;
+const u32 KSEG        = 0x8000'0000;
+
 // Magic value to match the PSX "ABI"
 const u32 TCB_THREAD_FREE     = 0x1000;
 const u32 TCB_THREAD_RESERVED = 0x4000;
 const u32 SIZEOF_TCB          = 0xC0;
 const u32 SIZEOF_IRQ_HANDLER  = 0x8;
-// The real size of the TCB is set in system;cnf (or by a call to table:0xA id:0x9C)
-u32 TCB_MAX_THREADS = 8;
-const u32 MAX_IRQ_HANDLER = 4;
+u32 TCB_MAX_THREADS           = 4; // The real size of the TCB is set in system;cnf (or by a call to table:0xA id:0x9C)
+const u32 MAX_IRQ_HANDLER     = 4;
 
-const u32 USEG_MASK   = 0x1FFF'FFFF;
-const u32 KSEG        = 0x8000'0000;
 const u32 G_HANDLERS  = 0x0100;
 const u32 G_PROCESS   = 0x0108;
 const u32 G_THREADS   = 0x0110;
+const u32 G_EVENTS    = 0x0120;
+const u32 G_FILES     = 0x0140;
+const u32 G_DEVICES   = 0x0150;
 const u32 TABLE_A0    = 0x0200; // vector for call a0
 const u32 TABLE_B0    = 0x0874; // vector for call b0
 const u32 TABLE_C0    = 0x0674; // vector for call c0
-// Allocate some data at the end of the kernel space
+// End of Magic value
+
+// Statically allocate some data at the end of the kernel space
 const u32 KERNEL_PCB         = 0xE000;                                                    // store process control block info here
 const u32 KERNEL_TCB         = KERNEL_PCB + 4;                                            // store thread control block info here
 const u32 KERNEL_IRQ_HANDLER = KERNEL_TCB + SIZEOF_TCB * 8;                               // store irq handlers info here
 const u32 KERNEL_HEAP        = KERNEL_IRQ_HANDLER + SIZEOF_IRQ_HANDLER * MAX_IRQ_HANDLER; // Start address of remaining space
+// Statically allocate some data in the rom
+const u32 ROM_HLE_STATE     = 0x01000;
+const u32 ROM_EVENTS        = 0x40000;
+const u32 ROM_FONT_8140     = 0x66000;
+const u32 ROM_FONT_889F     = 0x69d68;
 
 template<typename T, typename T2>
 void StoreToLE(T& dest, const T2& src) {
@@ -90,6 +100,11 @@ void StoreToBE(T& dest, const T& src) {
     static_assert(sizeof(T) == sizeof(T2));
     dest = LoadFromBE((T)src);
 }
+
+struct HleState {
+    u32 version;
+};
+static HleState* g;
 
 
 // Keep trace of the event status to only print change
@@ -3520,13 +3535,13 @@ void psxBiosInitFull() {
     psxBiosInit_StdLib();
     psxBiosInit_Lib();
 
-#if HLE_ENABLE_EVENT
-    u32 base;
-    int size;
+    g = (HleState*)(PSX_ROM_START + ROM_HLE_STATE);
+    static_assert(ROM_HLE_STATE + sizeof(HleState) < ROM_EVENTS, "Hle state is too big, overwrite event");
+    g->version = 0;
 
-    base = 0x1000;
-    size = sizeof(EvCB) * 32;
-    EventCB = (EvCB *)(PSX_ROM_START + base); base += size * 6;
+#if HLE_ENABLE_EVENT
+    constexpr size_t size = sizeof(EvCB) * 32;
+    EventCB = (EvCB *)(PSX_ROM_START + ROM_EVENTS);
     if (HLE_FULL) {
         memset(EventCB, 0, size * 6);
     }
@@ -3536,6 +3551,8 @@ void psxBiosInitFull() {
     UeEV = EventCB + 32 * 3;
     SwEV = EventCB + 32 * 4;
     ThEV = EventCB + 32 * 5;
+
+    static_assert((size * 6) + ROM_EVENTS < ROM_FONT_8140, "EventCB is too big, overwrite fonts");
 #endif
 
 #if HLE_ENABLE_THREAD
@@ -3631,9 +3648,9 @@ void psxBiosInitFull() {
         // fonts
         uLongf len;
         len = 0x80000 - 0x66000;
-        uncompress((Bytef *)(PSX_ROM_START + 0x66000), &len, font_8140, sizeof(font_8140));
+        uncompress((Bytef *)(PSX_ROM_START + ROM_FONT_8140), &len, font_8140, sizeof(font_8140));
         len = 0x80000 - 0x69d68;
-        uncompress((Bytef *)(PSX_ROM_START + 0x69d68), &len, font_889f, sizeof(font_889f));
+        uncompress((Bytef *)(PSX_ROM_START + ROM_FONT_889F), &len, font_889f, sizeof(font_889f));
 #endif
 
         // memory size 2 MB
