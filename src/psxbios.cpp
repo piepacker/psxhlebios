@@ -108,6 +108,8 @@ struct HleState {
     // Pad
     // Memory Card
     // Heap
+    u32 heap_size;
+    u32 heap_addr; // PSX address
     // File
     // Exception/IRQ
     // Misc
@@ -457,12 +459,6 @@ static EvCB *RcEV; // 0xf2
 static EvCB *UeEV; // 0xf3
 static EvCB *SwEV; // 0xf4
 static EvCB *ThEV; // 0xff
-#endif
-
-#if HLE_ENABLE_HEAP
-static u32 heap_size = 0;
-static u32 *heap_addr = NULL;
-static u32 *heap_end = NULL;
 #endif
 
 static FileDesc FDesc[32];
@@ -1160,19 +1156,20 @@ void psxBios_qsort(HLE_BIOS_CALL_ARGS) { // 0x31
 
 #if HLE_ENABLE_HEAP
 void psxBios_malloc(HLE_BIOS_CALL_ARGS) { // 0x33
-    unsigned int *chunk, *newchunk = NULL;
-    unsigned int dsize = 0, csize, cstat;
+    u32 *chunk, *newchunk = NULL;
+    u32 dsize = 0, csize, cstat;
     int colflag;
     PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x33]);
 
-    if (!a0 || (!heap_size || !heap_addr)) {
+    if (!a0 || (!g->heap_size || !g->heap_addr)) {
         v0 = 0;
         pc0 = ra;
         return;
     }
 
+    u32* heap_end = (u32*)((u8*)PSXM(g->heap_addr) + g->heap_size);
     // scan through heap and combine free chunks of space
-    chunk = heap_addr;
+    chunk = (u32*)PSXM(g->heap_addr);
     colflag = 0;
     while(chunk < heap_end) {
         // get size and status of actual chunk
@@ -1212,7 +1209,7 @@ void psxBios_malloc(HLE_BIOS_CALL_ARGS) { // 0x33
     if (colflag == 1)
         StoreToLE(*newchunk, dsize | 1);
 
-    chunk = heap_addr;
+    chunk = (u32*)PSXM(g->heap_addr);
     csize = ((u32)*chunk) & 0xfffffffc;
     cstat = ((u32)*chunk) & 1;
     dsize = (a0 + 3) & 0xfffffffc;
@@ -1324,13 +1321,12 @@ void psxBios_InitHeap(HLE_BIOS_CALL_ARGS) { // 0x39
 
     size &= 0xfffffffc;
 
-    heap_addr = (u32 *)Ra0;
-    heap_size = size;
-    heap_end = (u32 *)((u8 *)heap_addr + heap_size);
+    g->heap_addr = a0;
+    g->heap_size = size;
     /* HACKFIX: Commenting out this line fixes GTA2 crash */
     //StoreToLE(*heap_addr, size | 1);
 
-    SysPrintf("InitHeap %x,%x : %x %x\n",a0,a1, (int)((uptr)heap_addr-(uptr)PSX_RAM_START), size);
+    SysPrintf("InitHeap %x,%x : %x %x\n",a0,a1, (int)((uptr)PSXM(g->heap_addr)-(uptr)PSX_RAM_START), size);
 
     pc0 = ra;
 }
@@ -3584,9 +3580,8 @@ void psxBiosInitFull() {
 #endif
 
 #if HLE_ENABLE_HEAP
-    heap_addr = NULL;
-    heap_end = NULL;
-    heap_size = 0;
+    g->heap_addr = 0;
+    g->heap_size = 0;
 #endif
 
 #if HLE_ENABLE_MCD
@@ -4276,7 +4271,6 @@ void psxBiosFreeze(int Mode) {
     bfreezepsxMptr(pad_buf, int);
     bfreezepsxMptr(pad_buf1, u8);
     bfreezepsxMptr(pad_buf2, u8);
-    bfreezepsxMptr(heap_addr, u32);
     bfreezel(&pad_buf1len);
     bfreezel(&pad_buf2len);
     bfreezes(regs);
@@ -4284,6 +4278,5 @@ void psxBiosFreeze(int Mode) {
     bfreezes(FDesc);
     bfreezel(&card_active_chan);
     bfreezel(&pad_stopped);
-    bfreezel(&heap_size);
 }
 #endif
