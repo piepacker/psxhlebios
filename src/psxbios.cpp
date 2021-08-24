@@ -101,29 +101,6 @@ void StoreToBE(T& dest, const T& src) {
     dest = LoadFromBE((T)src);
 }
 
-struct HleState {
-    u32 version;
-    // Entry point
-    u32 jmp_int; // PSX address
-    // Pad
-    u32 pad_stopped;
-    u32 pad_buf;  // PSX address
-    u32 pad_buf1; // PSX address
-    u32 pad_buf2; // PSX address
-    // Memory Card
-    u32 cardState;
-    u32 card_active_chan;
-    // Heap
-    u32 heap_size;
-    u32 heap_addr; // PSX address
-    // File
-    // Exception/IRQ
-    u32 regs[36]; // 32 GPR + lo + hi + pc + npc (duck)
-    // Misc
-};
-static HleState* g;
-
-
 // Keep trace of the event status to only print change
 static u8 s_debug_ev[256*256];
 
@@ -454,7 +431,31 @@ static EvCB *SwEV; // 0xf4
 static EvCB *ThEV; // 0xff
 #endif
 
-static FileDesc FDesc[32];
+struct HleState {
+    u32 version;
+    // Entry point
+    u32 jmp_int; // PSX address
+    // Pad
+    u32 pad_stopped;
+    u32 pad_buf;  // PSX address
+    u32 pad_buf1; // PSX address
+    u32 pad_buf2; // PSX address
+    // Memory Card
+    u32 cardState;
+    u32 card_active_chan;
+    // Heap
+    u32 heap_size;
+    u32 heap_addr; // PSX address
+    // File
+    u32  nfile;
+    char ffile[64];
+    FileDesc FDesc[32];
+    // Exception/IRQ
+    u32 regs[36]; // 32 GPR + lo + hi + pc + npc (duck)
+    // Misc
+};
+static HleState* g;
+
 
 // oh silly PCSX. they did the classic VM nono and just recursively called the interpreter
 // in order to emulate softCalls. A miracle this ever worked.
@@ -2363,7 +2364,7 @@ void psxBios_UnDeliverEvent(HLE_BIOS_CALL_ARGS) { // 0x20
 #if HLE_ENABLE_MCD
 void buread(void* ra1, int mcd, int length) {
     auto mcdraw = VmcGet(mcd - 1);
-    auto& fd = FDesc[1 + mcd];
+    auto& fd = g->FDesc[1 + mcd];
 
     SysPrintf("read %d: %x,%x (%s)\n", fd.mcfile, fd.offset, length, mcdraw + 128 * fd.mcfile + 0xa);
     auto* ptr = mcdraw + 8192 * fd.mcfile + fd.offset;
@@ -2382,15 +2383,15 @@ void buread(void* ra1, int mcd, int length) {
 }
 
 void buwrite(void* ra1, int mcd, int length) {
-    u32 offset =  + 8192 * FDesc[1 + mcd].mcfile + FDesc[1 + mcd].offset;
+    u32 offset =  + 8192 * g->FDesc[1 + mcd].mcfile + g->FDesc[1 + mcd].offset;
 
-    SysPrintf("write %d: %x,%x\n", FDesc[1 + mcd].mcfile, FDesc[1 + mcd].offset, length);
+    SysPrintf("write %d: %x,%x\n", g->FDesc[1 + mcd].mcfile, g->FDesc[1 + mcd].offset, length);
 
     VmcWriteNV(mcd -1, offset, ra1, length);
 
-    FDesc[1 + mcd].offset += length;
+    g->FDesc[1 + mcd].offset += length;
 
-    if (FDesc[1 + mcd].mode & 0x8000) {
+    if (g->FDesc[1 + mcd].mode & 0x8000) {
         DeliverEvent(0x11, 0x2); /* 0xf0000011, 0x0004 */
         DeliverEvent(0x81, 0x2); /* 0xf4000001, 0x0004 */
         v0 = 0;
@@ -2399,9 +2400,6 @@ void buwrite(void* ra1, int mcd, int length) {
         v0 = length;
 }
 
-char ffile[64], *pfile;
-int nfile;
-
 static void buopen(int mcd)
 {
     auto mcdraw = VmcGet(mcd - 1);
@@ -2409,15 +2407,15 @@ static void buopen(int mcd)
     char *ptr = (char*)mcdraw;
     char *mcd_data = (char*)mcdraw;
 
-    strcpy(FDesc[1 + mcd].name, Ra0+5);
-    FDesc[1 + mcd].offset = 0;
-    FDesc[1 + mcd].mode   = a1;
+    strcpy(g->FDesc[1 + mcd].name, Ra0+5);
+    g->FDesc[1 + mcd].offset = 0;
+    g->FDesc[1 + mcd].mode   = a1;
 
     for (i=1; i<16; i++) {
         const char *fptr = mcd_data + 128 * i;
         if ((*fptr & 0xF0) != 0x50) continue;
-        if (strcmp(FDesc[1 + mcd].name, fptr+0xa)) continue;
-        FDesc[1 + mcd].mcfile = i;
+        if (strcmp(g->FDesc[1 + mcd].name, fptr+0xa)) continue;
+        g->FDesc[1 + mcd].mcfile = i;
         SysPrintf("open %s\n", fptr+0xa);
         v0 = 1 + mcd;
         break;
@@ -2430,13 +2428,13 @@ static void buopen(int mcd)
 
             if ((*fptr & 0xF0) != 0xa0) continue;
 
-            FDesc[1 + mcd].mcfile = i;
+            g->FDesc[1 + mcd].mcfile = i;
             fptr[0] = 0x51;
             fptr[4] = 0x00;
             fptr[5] = 0x20 * nblk;
             fptr[6] = 0x00;
             fptr[7] = 0x00;
-            strcpy(fptr+0xa, FDesc[1 + mcd].name);
+            strcpy(fptr+0xa, g->FDesc[1 + mcd].name);
             pptr = fptr2 = fptr;
             for(j=2; j<=nblk; j++) {
                 int k;
@@ -2554,15 +2552,15 @@ void psxBios_lseek(HLE_BIOS_CALL_ARGS) { // 0x33
 
     switch (a2) {
         case 0: // SEEK_SET
-            FDesc[a0].offset = a1;
+            g->FDesc[a0].offset = a1;
             v0 = a1;
 //			DeliverEvent(0x11, 0x2); // 0xf0000011, 0x0004
 //			DeliverEvent(0x81, 0x2); // 0xf4000001, 0x0004
             break;
 
         case 1: // SEEK_CUR
-            FDesc[a0].offset+= a1;
-            v0 = FDesc[a0].offset;
+            g->FDesc[a0].offset+= a1;
+            v0 = g->FDesc[a0].offset;
             break;
     }
 
@@ -2649,12 +2647,13 @@ static void bufile(int mcd_port) {
     struct DIRENTRY *dir = (struct DIRENTRY *)Ra1;
 
     size_t size_of_name = strlen_internal(dir->name);
+    auto pfile = g->ffile + 5;
 
-    while (nfile < 16) {
+    while (g->nfile < 16) {
         int match=1;
-        auto* ptr = mcdraw + 128 * (nfile + 1);
+        auto* ptr = mcdraw + 128 * (g->nfile + 1);
 
-        nfile++;
+        g->nfile++;
         if ((*ptr & 0xF0) != 0x50) continue;
         /* Bug link files show up as free block. */
         if (!ptr[0xa]) continue;
@@ -2674,7 +2673,7 @@ static void bufile(int mcd_port) {
             }
             match = 0; break;
         }
-        SysPrintf("%d : %s = %s + %s (match=%d)\n", nfile, dir->name, pfile, ptr, match);
+        SysPrintf("%d : %s = %s + %s (match=%d)\n", g->nfile, dir->name, pfile, ptr, match);
         if (match == 0) { continue; }
         dir->size = 8192;
         v0 = _dir;
@@ -2696,9 +2695,8 @@ void psxBios_firstfile(HLE_BIOS_CALL_ARGS) { // 42
     //auto mcd = PSX_FIO->GetMemcardDevice(0);
 
     if (pa0) {
-        strcpy(ffile, pa0);
-        pfile = ffile+5;
-        nfile = 0;
+        strcpy(g->ffile, pa0);
+        g->nfile = 0;
         if (!strncmp(pa0, "bu00", 4)) {
             // firstfile() calls _card_read() internally, so deliver it's event
             DeliverEvent(0x11, 0x2);
@@ -2724,11 +2722,11 @@ void psxBios_nextfile(HLE_BIOS_CALL_ARGS) { // 43
 
     v0 = 0;
 
-    if (!strncmp(ffile, "bu00", 4)) {
+    if (!strncmp(g->ffile, "bu00", 4)) {
         bufile(1);
     }
 
-    if (!strncmp(ffile, "bu10", 4)) {
+    if (!strncmp(g->ffile, "bu10", 4)) {
         bufile(2);
     }
 
@@ -3582,7 +3580,9 @@ void psxBiosInitFull() {
 #endif
 
 #if HLE_ENABLE_MCD
-    memset(FDesc, 0, sizeof(FDesc));
+    g->nfile = 0;
+    memset(g->ffile, 0, sizeof(g->ffile));
+    memset(g->FDesc, 0, sizeof(g->FDesc));
 #endif
 
 #if HLE_FULL
@@ -4235,31 +4235,3 @@ extern "C" int HleDispatchCall(uint32_t pc) {
 
     return 0;
 }
-
-#if HLE_PCSX_IFC
-#define bfreeze(ptr, size) { \
-    if (Mode == 1) memcpy(&psxR[base], ptr, size); \
-    if (Mode == 0) memcpy(ptr, &psxR[base], size); \
-    base += size; \
-}
-
-#define bfreezes(ptr) bfreeze(ptr, sizeof(ptr))
-#define bfreezel(ptr) bfreeze(ptr, sizeof(*ptr))
-
-#define bfreezepsxMptr(ptr, type) { \
-    if (Mode == 1) { \
-        if (ptr) StoreToLE(psxRu32ref(base), (u32)(((s8 *)ptr) - psxM)); \
-        else psxRu32ref(base) = 0; \
-    } else { \
-        if (psxRu32(base) != 0) ptr = (type *)(psxM + psxRu32(base)); \
-        else (ptr) = NULL; \
-    } \
-    base += sizeof(u32); \
-}
-
-void psxBiosFreeze(int Mode) {
-    u32 base = 0x40000;
-
-    bfreezes(FDesc);
-}
-#endif
