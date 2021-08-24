@@ -103,6 +103,14 @@ void StoreToBE(T& dest, const T& src) {
 
 struct HleState {
     u32 version;
+    // Entry point
+    u32 jmp_int; // PSX address
+    // Pad
+    // Memory Card
+    // Heap
+    // File
+    // Exception/IRQ
+    // Misc
 };
 static HleState* g;
 
@@ -426,10 +434,6 @@ typedef struct {
     u32  size;
     u32  mcfile;
 } FileDesc;
-
-#if HLE_ENABLE_ENTRYINT
-static u32 jmp_int = 0;     // mips address
-#endif
 
 #if HLE_ENABLE_PAD || HLE_FULL
 static int *pad_buf = NULL;
@@ -2338,14 +2342,14 @@ void psxBios_ReturnFromException(HLE_BIOS_CALL_ARGS) { // 17
 void psxBios_ResetEntryInt(HLE_BIOS_CALL_ARGS) { // 18
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x18]);
 
-    jmp_int = 0;
+    g->jmp_int = 0;
     pc0 = ra;
 }
 
 void psxBios_HookEntryInt(HLE_BIOS_CALL_ARGS) { // 19
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x19]);
 
-    jmp_int = a0;
+    g->jmp_int = a0;
     pc0 = ra;
 }
 #endif
@@ -3560,7 +3564,7 @@ void psxBiosInitFull() {
 #endif
 
 #if HLE_ENABLE_ENTRYINT
-    jmp_int = 0;
+    g->jmp_int = 0;
     // Save IRQ handlers info into PSX memory
     // 1/ allow game to use it outside of OS
     // 2/ Compatible with savestate without extra burden
@@ -4084,9 +4088,9 @@ void psxBiosException80() {
                 }
             }
 
-            if (jmp_int) {
-                uint32_t* jmpptr = (uint32_t*)PSXM(jmp_int);
-                //PSXBIOS_LOG("jmp_int @ %08x - ra=%08x sp=%08x fp=%08x\n", jmp_int, jmpptr[0], jmpptr[1], jmpptr[2]);
+            if (g->jmp_int) {
+                uint32_t* jmpptr = (uint32_t*)PSXM(g->jmp_int);
+                //PSXBIOS_LOG("jmp_int @ %08x - ra=%08x sp=%08x fp=%08x\n", g->jmp_int, jmpptr[0], jmpptr[1], jmpptr[2]);
                 Write_ISTAT(0xffffffff);
 
                 ra = jmpptr[0];
@@ -4269,7 +4273,6 @@ extern "C" int HleDispatchCall(uint32_t pc) {
 void psxBiosFreeze(int Mode) {
     u32 base = 0x40000;
 
-    //bfreezepsxMptr(jmp_int, u32);
     bfreezepsxMptr(pad_buf, int);
     bfreezepsxMptr(pad_buf1, u8);
     bfreezepsxMptr(pad_buf2, u8);
