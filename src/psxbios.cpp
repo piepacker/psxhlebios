@@ -54,33 +54,46 @@
 #   include <zlib.h>
 #endif
 
+extern int big_dump;
+
 const u32 USEG_MASK   = 0x1FFF'FFFF;
 const u32 KSEG        = 0x8000'0000;
 
 // Magic value to match the PSX "ABI"
 const u32 TCB_THREAD_FREE     = 0x1000;
 const u32 TCB_THREAD_RESERVED = 0x4000;
+const u32 SIZEOF_PCB          = 0x8;
 const u32 SIZEOF_TCB          = 0xC0;
-const u32 SIZEOF_IRQ_HANDLER  = 0x8;
-u32 TCB_MAX_THREADS           = 4; // The real size of the TCB is set in system;cnf (or by a call to table:0xA id:0x9C)
-const u32 MAX_IRQ_HANDLER     = 4;
+const u32 SIZEOF_HANDLER      = 0x8;
+const u32 PCB_MAX             = 1;
+// The real size of the TCB is set in system;cnf (or by a call to table:0xA id:0x9C)
+// or hacked by the game (Metal Gears Solid)
+u32 TCB_MAX                   = 4;
+const u32 HANDLER_MAX         = 4;
 
-const u32 G_HANDLERS  = 0x0100;
-const u32 G_PROCESS   = 0x0108;
-const u32 G_THREADS   = 0x0110;
-const u32 G_EVENTS    = 0x0120;
-const u32 G_FILES     = 0x0140;
-const u32 G_DEVICES   = 0x0150;
-const u32 TABLE_A0    = 0x0200; // vector for call a0
-const u32 TABLE_B0    = 0x0874; // vector for call b0
-const u32 TABLE_C0    = 0x0674; // vector for call c0
+const u32 G_HANDLERS      = 0x0100;
+const u32 G_HANDLERS_SIZE = 0x0104;
+const u32 G_PROCESS       = 0x0108;
+const u32 G_PROCESS_SIZE  = 0x010C;
+const u32 G_THREADS       = 0x0110;
+const u32 G_THREADS_SIZE  = 0x0114;
+const u32 G_EVENTS        = 0x0120;
+const u32 G_EVENTS_SIZE   = 0x0124;
+const u32 G_FILES         = 0x0140;
+const u32 G_FILES_SIZE    = 0x0144;
+const u32 G_DEVICES       = 0x0150;
+const u32 G_DEVICES_SIZE  = 0x0154;
+const u32 TABLE_A0        = 0x0200; // vector for call a0
+const u32 TABLE_B0        = 0x0874; // vector for call b0
+const u32 TABLE_C0        = 0x0674; // vector for call c0
 // End of Magic value
 
 // Statically allocate some data at the end of the kernel space
 const u32 KERNEL_PCB         = 0xE000;                                                    // store process control block info here
-const u32 KERNEL_TCB         = KERNEL_PCB + 4;                                            // store thread control block info here
-const u32 KERNEL_IRQ_HANDLER = KERNEL_TCB + SIZEOF_TCB * 8;                               // store irq handlers info here
-const u32 KERNEL_HEAP        = KERNEL_IRQ_HANDLER + SIZEOF_IRQ_HANDLER * MAX_IRQ_HANDLER; // Start address of remaining space
+const u32 KERNEL_TCB         = KERNEL_PCB + SIZEOF_PCB * 1;                               // store thread control block info here
+const u32 KERNEL_IRQ_HANDLER = KERNEL_TCB + SIZEOF_TCB * 16;                              // store irq handlers info here
+const u32 KERNEL_HEAP        = KERNEL_IRQ_HANDLER + SIZEOF_HANDLER * HANDLER_MAX;         // Start address of remaining space
+const u32 KERNEL_END         = 0xFFFC;
 // Statically allocate some data in the rom
 const u32 ROM_HLE_STATE     = 0x01000;
 const u32 ROM_EVENTS        = 0x40000;
@@ -209,7 +222,7 @@ const char * const biosA0n[256] = {
 
 const char * const biosB0n[256] = {
 // 0x00
-    "SysMalloc",		"sys_b0_01",	"sys_b0_02",	"sys_b0_03",
+    "SysMalloc",		"SysFree",	"sys_b0_02",	"sys_b0_03",
     "sys_b0_04",		"sys_b0_05",	"sys_b0_06",	"DeliverEvent",
     "OpenEvent",		"CloseEvent",	"WaitEvent",	"TestEvent",
     "EnableEvent",		"DisableEvent",	"OpenTh",		"CloseTh",
@@ -446,6 +459,8 @@ struct HleState {
     // Heap
     u32 heap_size;
     u32 heap_addr; // PSX address
+    u32 kheap_size;
+    u32 kheap_addr; // PSX address
     // File
     u32  nfile;
     char ffile[64];
@@ -1854,6 +1869,22 @@ void psxBios__card_auto(HLE_BIOS_CALL_ARGS) { // 0xAD
 
 /* System calls B0 */
 
+void psxBios_SysMalloc(HLE_BIOS_CALL_ARGS) { // 00
+    // Allocation shall happen only once at init
+    // so let's not bother to support free
+    // Add a check if the continuous allocator is failling
+    rel_check(g->kheap_size > a0);
+    uint32_t aligned_size = (a0 + 3) & ~0x3;
+
+    v0 = g->kheap_addr | KSEG;
+    g->kheap_addr += aligned_size;
+    g->kheap_size -= aligned_size;
+
+    PSXBIOS_LOG("psxBios_%s 0x%x => %x\n", biosB0n[0x00], a0, v0);
+
+    pc0 = ra;
+}
+
 #if HLE_ENABLE_RCNT
 void psxBios_SetRCnt(HLE_BIOS_CALL_ARGS) { // 02
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x02]);
@@ -2066,7 +2097,7 @@ void psxBios_EnableEvent(HLE_BIOS_CALL_ARGS) { // 0c
     ev   = a0 & 0xff;
     spec = (a0 >> 8) & 0xff;
 
-    PSXBIOS_LOG("psxBios_%s %x,%x\n", biosB0n[0x0c], ev, spec);
+    PSXBIOS_LOG("psxBios_%s %x,%x (class:%x)\n", biosB0n[0x0c], ev, spec, a0);
 
     EventCB[ev][spec].status = EVENT_STATUS_ENABLED;
 
@@ -2095,14 +2126,17 @@ static void initThread() {
 
     // Setup Global pointer to process and thread blocks
     StoreToLE(psxMu32ref(G_PROCESS), KERNEL_PCB | KSEG);
+    StoreToLE(psxMu32ref(G_PROCESS_SIZE), SIZEOF_PCB * PCB_MAX);
+
     StoreToLE(psxMu32ref(G_THREADS), KERNEL_TCB | KSEG);
+    StoreToLE(psxMu32ref(G_THREADS_SIZE), SIZEOF_TCB * TCB_MAX);
 
     // Fill the process control block. Basically a pointer to current thread (so TCB slot 0)
     StoreToLE(psxMu32ref(KERNEL_PCB), KERNEL_TCB | KSEG); // store pointer to process control block
     // Fill the thread control block. Basically set RESERVED/FREE on threads
-    memset(PSXM(KERNEL_TCB), 0, SIZEOF_TCB * TCB_MAX_THREADS);
+    memset(PSXM(KERNEL_TCB), 0, SIZEOF_TCB * TCB_MAX);
     StoreToLE(psxMu32ref(KERNEL_TCB), TCB_THREAD_RESERVED);
-    for (auto i = 1u; i < TCB_MAX_THREADS; i++) {
+    for (auto i = 1u; i < TCB_MAX; i++) {
         StoreToLE(psxMu32ref(KERNEL_TCB + i * SIZEOF_TCB), TCB_THREAD_FREE);
     }
 }
@@ -2147,15 +2181,21 @@ static void restoreContext(u32 tcb) {
  */
 
 void psxBios_OpenTh(HLE_BIOS_CALL_ARGS) { // 0e
+    u32 tcb_max = LoadFromLE(psxMu32ref(G_THREADS_SIZE)) / SIZEOF_TCB;
+    if (tcb_max != TCB_MAX) {
+        PSXBIOS_LOG("psxBios_OpenTh() WARNING! max threads was updated from %d to %d\n", TCB_MAX, tcb_max);
+        TCB_MAX = tcb_max;
+    }
+
     // Get pointer of the TCB
     u32 tcb = LoadFromLE(psxMu32ref(G_THREADS));
     // Search an available thread
     u32 th = 0;
-    for (; th < TCB_MAX_THREADS; th++, tcb += SIZEOF_TCB) {
+    for (; th < TCB_MAX; th++, tcb += SIZEOF_TCB) {
         if (LoadFromLE(psxMu32ref(tcb)) == TCB_THREAD_FREE) break;
     }
 
-    if (th == TCB_MAX_THREADS) {
+    if (th == TCB_MAX) {
         // Feb 2019 - Added out-of-bounds fix caught by cppcheck:
         // When no free TCB is found, return 0xffffffff according to Nocash doc.
         PSXBIOS_LOG("psxBios_OpenTh() WARNING! No Free TCBs found!\n");
@@ -2163,7 +2203,7 @@ void psxBios_OpenTh(HLE_BIOS_CALL_ARGS) { // 0e
         pc0 = ra;
         return;
     }
-    PSXBIOS_LOG("psxBios_%s: 0x%x (func:0x%x)\n", biosB0n[0x0e], tcb, a0);
+    PSXBIOS_LOG("psxBios_%s: 0x%x (%d) (func:0x%x)\n", biosB0n[0x0e], tcb, th, a0);
 
     // Reserve the thread
     auto context = (u32*)PSXM(tcb & USEG_MASK);
@@ -2184,14 +2224,14 @@ void psxBios_OpenTh(HLE_BIOS_CALL_ARGS) { // 0e
 
 void psxBios_CloseTh(HLE_BIOS_CALL_ARGS) { // 0f
     int th = a0 & 0xff;
-    dbg_check((u32)th < TCB_MAX_THREADS);
+    dbg_check((u32)th < TCB_MAX);
 
     // Get pointer of the TCB
     u32 tcb = LoadFromLE(psxMu32ref(G_THREADS)) + th * SIZEOF_TCB;
     // And mark current thread as free
     StoreToLE(psxMu32ref(tcb), TCB_THREAD_FREE);
 
-    PSXBIOS_LOG("psxBios_%s: 0x%x\n", biosB0n[0x0f], tcb);
+    PSXBIOS_LOG("psxBios_%s: 0x%x (%d)\n", biosB0n[0x0f], tcb, th);
 
     /* The return value is always 1 (even if the handle was already closed). */
     v0 = 1;
@@ -2204,7 +2244,7 @@ void psxBios_CloseTh(HLE_BIOS_CALL_ARGS) { // 0f
 
 void psxBios_ChangeTh(HLE_BIOS_CALL_ARGS) { // 10
     int th = a0 & 0xff;
-    dbg_check((u32)th < TCB_MAX_THREADS);
+    dbg_check((u32)th < TCB_MAX);
 
     /* The return value is always 1. */
     v0 = 1;
@@ -3015,6 +3055,18 @@ void psxBios__card_wait(HLE_BIOS_CALL_ARGS) { // 5d
 
 /* System calls C0 */
 
+void psxBios_InitRCnt(HLE_BIOS_CALL_ARGS) { // 00
+    PSXBIOS_LOG("psxBios_%s: %x\n", biosC0n[0x00] ,a0, a1);
+    v0 = 0;
+    pc0 = ra;
+}
+
+void psxBios_InitException(HLE_BIOS_CALL_ARGS) { // 01
+    PSXBIOS_LOG("psxBios_%s: %x\n", biosC0n[0x01] ,a0, a1);
+    v0 = 0;
+    pc0 = ra;
+}
+
 #if HLE_ENABLE_ENTRYINT
 /*
  * int SysEnqIntRP(int index , long *queue);
@@ -3022,11 +3074,11 @@ void psxBios__card_wait(HLE_BIOS_CALL_ARGS) { // 5d
 
 void psxBios_SysEnqIntRP(HLE_BIOS_CALL_ARGS) { // 02
     PSXBIOS_LOG("psxBios_%s: %x (0x%x)\n", biosC0n[0x02] ,a0, a1);
-    dbg_check(a0 < MAX_IRQ_HANDLER);
+    dbg_check(a0 < HANDLER_MAX);
 
     // Get the pointer to 'a0' priority linked list
     u32 handlers = LoadFromLE(psxMu32ref(G_HANDLERS));
-    u32 handler_ptr = handlers + a0 * SIZEOF_IRQ_HANDLER;
+    u32 handler_ptr = handlers + a0 * SIZEOF_HANDLER;
 
     // Get current head
     u32 head = psxMu32ref(handler_ptr);
@@ -3045,14 +3097,14 @@ void psxBios_SysEnqIntRP(HLE_BIOS_CALL_ARGS) { // 02
 
 void psxBios_SysDeqIntRP(HLE_BIOS_CALL_ARGS) { // 03
     PSXBIOS_LOG("psxBios_%s: %x (0x%x)\n", biosC0n[0x03], a0, a1);
-    dbg_check(a0 < MAX_IRQ_HANDLER);
+    dbg_check(a0 < HANDLER_MAX);
 
     // Note: It is implemented as intended but original PSX might be buggy
     // No guarantee on returned value (I used void)
 
     // Get the pointer to 'a0' priority linked list
     u32 handlers = LoadFromLE(psxMu32ref(G_HANDLERS));
-    u32 handler_ptr = handlers + a0 * SIZEOF_IRQ_HANDLER;
+    u32 handler_ptr = handlers + a0 * SIZEOF_HANDLER;
 
     // Get current head
     u32 head = psxMu32ref(handler_ptr);
@@ -3083,6 +3135,22 @@ void psxBios_SysDeqIntRP(HLE_BIOS_CALL_ARGS) { // 03
     pc0 = ra;
 }
 #endif
+
+void psxBios_SysInitMemory(HLE_BIOS_CALL_ARGS) { // 08
+    PSXBIOS_LOG("psxBios_%s: %x (0x%x)\n", biosC0n[0x08], a0, a1);
+    g->kheap_addr = a0;
+    g->kheap_size = a1;
+
+    v0 = 0;
+    pc0 = ra;
+}
+
+void psxBios_InitDefInt(HLE_BIOS_CALL_ARGS) { // 0c
+    PSXBIOS_LOG("psxBios_%s\n", biosC0n[0x0c]);
+
+    v0 = 0;
+    pc0 = ra;
+}
 
 using VoidFnptr = void (*)();
 using HleBiosFnptr = void (*)(HLE_BIOS_CALL_ARGS);
@@ -3363,9 +3431,10 @@ void psxBiosInit_Lib() {
     //biosA0[0xb2] = psxBios_do_a_long_jmp
     //biosA0[0xb3] = psxBios_sys_a0_b3;
     //biosA0[0xb4] = psxBios_sub_function;
+
 //*******************B0 CALLS****************************
-    //biosB0[0x00] = psxBios_SysMalloc;
-    //biosB0[0x01] = psxBios_sys_b0_01;
+    biosB0[0x00] = psxBios_SysMalloc;
+    //biosB0[0x01] = psxBios_SysFree;
 
 #if HLE_ENABLE_RCNT
     if (hle_config_env_rcnt()) {
@@ -3486,8 +3555,8 @@ void psxBiosInit_Lib() {
     //biosB0[0x59] = psxBios_sys_b0_59;
     //biosB0[0x5a] = psxBios_sys_b0_5a;
 //*******************C0 CALLS****************************
-    //biosC0[0x00] = psxBios_InitRCnt;
-    //biosC0[0x01] = psxBios_InitException;
+    biosC0[0x00] = psxBios_InitRCnt;
+    biosC0[0x01] = psxBios_InitException;
 
 #if HLE_ENABLE_ENTRYINT
     biosB0[0x17] = psxBios_ReturnFromException;
@@ -3499,10 +3568,10 @@ void psxBiosInit_Lib() {
     //biosC0[0x05] = psxBios_get_free_TCB_slot;
     //biosC0[0x06] = psxBios_ExceptionHandler;
     //biosC0[0x07] = psxBios_InstallExeptionHandler;
-    //biosC0[0x08] = psxBios_SysInitMemory;
+    biosC0[0x08] = psxBios_SysInitMemory;
     //biosC0[0x09] = psxBios_SysInitKMem;
     //biosC0[0x0b] = psxBios_SystemError;
-    //biosC0[0x0c] = psxBios_InitDefInt;
+    biosC0[0x0c] = psxBios_InitDefInt;
     //biosC0[0x0d] = psxBios_sys_c0_0d;
     //biosC0[0x0e] = psxBios_sys_c0_0e;
     //biosC0[0x0f] = psxBios_sys_c0_0f;
@@ -3558,8 +3627,9 @@ void psxBiosInitFull() {
     //
     // Setup Global pointer to irqs handlers
     StoreToLE(psxMu32ref(G_HANDLERS), KERNEL_IRQ_HANDLER | KSEG);
+    StoreToLE(psxMu32ref(G_HANDLERS_SIZE), SIZEOF_HANDLER * HANDLER_MAX);
     // Fill the IRQ handlers info with 0
-    memset(PSXM(KERNEL_IRQ_HANDLER), 0, SIZEOF_IRQ_HANDLER * MAX_IRQ_HANDLER);
+    memset(PSXM(KERNEL_IRQ_HANDLER), 0, SIZEOF_HANDLER * HANDLER_MAX);
 #endif
 
 #if HLE_ENABLE_PAD
@@ -3573,6 +3643,8 @@ void psxBiosInitFull() {
     g->heap_addr = 0;
     g->heap_size = 0;
 #endif
+    g->kheap_addr = 0;
+    g->kheap_size = 0;
 
 #if HLE_ENABLE_MCD
     g->cardState = ~0;
@@ -3664,6 +3736,22 @@ void psxBiosInitFull() {
         StoreToLE(psxMu32ref(0x0004), 0x800C5A27);
         StoreToLE(psxMu32ref(0x0008), 0x08000403);
         StoreToLE(psxMu32ref(0x000C), 0x00000000);
+
+
+        // Wonderful hack for Metal Gears Solid
+        // The game query the function pointer of table A0/0x9D (GetConf)
+        // With the opcode they compute the address of the global conf structure
+        // Then manually update the parameters
+        //
+        // We don't care about those values but we care that game doesn't write random
+        // stuff at random address... So let's do black magic
+        //
+        // Redirect 0x9D to a free memory
+        u32 pseudo_getconf = KERNEL_END - 32;
+        StoreToLE(psxMu32ref(TABLE_A0 + 0x9D * 4), pseudo_getconf);
+        // Store 2 dummy opcode that will be used to build an address (KERNEL_HEAP + 4)
+        StoreToLE(psxMu32ref(pseudo_getconf), 0xA001);
+        StoreToLE(psxMu32ref(pseudo_getconf+4), pseudo_getconf + 16);
     }
 #endif
 
@@ -3716,7 +3804,9 @@ void psxBiosLoadExecCdrom() {
                 if (strcasecmp(lvalue, "tcb") == 0) {
                     if (rvalue) {
                         updated_tcb = true;
-                        TCB_MAX_THREADS = strtol(rvalue, nullptr, 16);
+                        TCB_MAX = strtol(rvalue, nullptr, 16);
+                        // Otherwise more memory shall be reserved on the kernel
+                        dbg_check(TCB_MAX <= 16);
                     }
                 }
             }
@@ -4045,7 +4135,7 @@ void psxBiosException80() {
 
             u32 handler_ptr = LoadFromLE(psxMu32ref(G_HANDLERS));
 
-            for (u32 i = 0; i < MAX_IRQ_HANDLER; i++, handler_ptr += SIZEOF_IRQ_HANDLER) {
+            for (u32 i = 0; i < HANDLER_MAX; i++, handler_ptr += SIZEOF_HANDLER) {
                 u32 head = psxMu32ref(handler_ptr);
                 while (head != 0) {
                     u32 *queue = (u32 *)PSXM(head);
