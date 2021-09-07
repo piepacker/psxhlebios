@@ -3074,13 +3074,13 @@ void psxBios__card_wait(HLE_BIOS_CALL_ARGS) { // 5d
 /* System calls C0 */
 
 void psxBios_InitRCnt(HLE_BIOS_CALL_ARGS) { // 00
-    PSXBIOS_LOG("psxBios_%s: %x\n", biosC0n[0x00] ,a0, a1);
+    PSXBIOS_LOG("psxBios_%s: %x\n", biosC0n[0x00] ,a0);
     v0 = 0;
     pc0 = ra;
 }
 
 void psxBios_InitException(HLE_BIOS_CALL_ARGS) { // 01
-    PSXBIOS_LOG("psxBios_%s: %x\n", biosC0n[0x01] ,a0, a1);
+    PSXBIOS_LOG("psxBios_%s: %x\n", biosC0n[0x01] ,a0);
     v0 = 0;
     pc0 = ra;
 }
@@ -3305,6 +3305,12 @@ void psxBiosPrintCall(int table) {
     } else if (table == 0xC0) {
         if (print_all || biosC0[call])
             PSXBIOS_LOG("psxBios traceC: %s (0x%x, 0x%x, 0x%x, 0x%x) (EPC:0x%x, RA:0x%x)\n", biosC0n[call], a0, a1, a2, a3, CP0_EPC, ra);
+    }
+    if (table == 0xB0 && call == 0x10) {
+        u32 pcb = LoadFromLE(psxMu32ref(G_PROCESS));
+        u32 tcb_current = LoadFromLE(psxMu32ref(pcb));
+        u32 tcb_0 = LoadFromLE(psxMu32ref(G_THREADS));
+        PSXBIOS_LOG("Change Thread from %x (%d)\n", tcb_current, (tcb_current - tcb_0) / SIZEOF_TCB);
     }
 }
 
