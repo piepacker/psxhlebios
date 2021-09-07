@@ -353,6 +353,9 @@ void VmcDirty(int port) {
 char* VmcGet(int port) {
     dbg_check((u32)port < 2);
     auto card = g_pad.GetMemoryCard(port);
+    if (!card)
+        return nullptr;
+
     auto& data = card->GetData();
     return (char*)data.data();
 }
@@ -2404,6 +2407,9 @@ void psxBios_UnDeliverEvent(HLE_BIOS_CALL_ARGS) { // 0x20
 #if HLE_ENABLE_MCD
 void buread(void* ra1, int mcd, int length) {
     auto mcdraw = VmcGet(mcd - 1);
+    if (mcdraw == nullptr)
+        return;
+
     auto& fd = g->FDesc[1 + mcd];
 
     SysPrintf("read %d: %x,%x (%s)\n", fd.mcfile, fd.offset, length, mcdraw + 128 * fd.mcfile + 0xa);
@@ -2443,6 +2449,9 @@ void buwrite(void* ra1, int mcd, int length) {
 static void buopen(int mcd)
 {
     auto mcdraw = VmcGet(mcd - 1);
+    if (mcdraw == nullptr)
+        return;
+
     int i;
     char *ptr = (char*)mcdraw;
     char *mcd_data = (char*)mcdraw;
@@ -2681,10 +2690,12 @@ static size_t strlen_internal(char* p)
     return size_of_array;
 }
 
-static void bufile(int mcd_port) {
+static void bufile(int mcd_port, u32 _dir) {
     auto mcdraw = VmcGet(mcd_port - 1);
-    u32 _dir = a1;
-    struct DIRENTRY *dir = (struct DIRENTRY *)Ra1;
+    if (mcdraw == nullptr)
+        return;
+
+    struct DIRENTRY *dir = (struct DIRENTRY *)PSXM(_dir);
 
     size_t size_of_name = strlen_internal(dir->name);
     auto pfile = g->ffile + 5;
@@ -2740,11 +2751,11 @@ void psxBios_firstfile(HLE_BIOS_CALL_ARGS) { // 42
         if (!strncmp(pa0, "bu00", 4)) {
             // firstfile() calls _card_read() internally, so deliver it's event
             DeliverEvent(0x11, 0x2);
-            bufile(1);
+            bufile(1, a1);
         } else if (!strncmp(pa0, "bu10", 4)) {
             // firstfile() calls _card_read() internally, so deliver it's event
             DeliverEvent(0x11, 0x2);
-            bufile(2);
+            bufile(2, a1);
         }
     }
 
@@ -2763,11 +2774,11 @@ void psxBios_nextfile(HLE_BIOS_CALL_ARGS) { // 43
     v0 = 0;
 
     if (!strncmp(g->ffile, "bu00", 4)) {
-        bufile(1);
+        bufile(1, a0);
     }
 
     if (!strncmp(g->ffile, "bu10", 4)) {
-        bufile(2);
+        bufile(2, a0);
     }
 
     pc0 = ra;
@@ -2775,6 +2786,9 @@ void psxBios_nextfile(HLE_BIOS_CALL_ARGS) { // 43
 
 static void burename(int mcd) {
     auto mcdraw = VmcGet(mcd - 1);
+    if (mcdraw == nullptr)
+        return;
+
     for (int i=1; i<16; i++) {
         char* ptr = (char*)(mcdraw + 128 * i);
 
@@ -2824,6 +2838,9 @@ void psxBios_rename(HLE_BIOS_CALL_ARGS) { // 44
 
 static void budelete(int mcd) {
     auto mcdraw = VmcGet(mcd - 1);
+    if (mcdraw == nullptr)
+        return;
+
     for (int i=1; i<16; i++) {
         char* ptr = (char*)(mcdraw + 128 * i);
 
@@ -2917,7 +2934,7 @@ void psxBios__card_write(HLE_BIOS_CALL_ARGS) { // 0x4e
     g->card_active_chan = a0;
     port = a0 >> 4;
 
-    if (pa2) {
+    if (a2) {
         VmcWriteNV(port, a1 * 128, pa2, 128);
     }
 
@@ -2946,9 +2963,10 @@ void psxBios__card_read(HLE_BIOS_CALL_ARGS) { // 0x4f
     g->card_active_chan = a0;
     port = a0 >> 4;
 
-    if (pa2) {
+    if (a2) {
         auto mcdraw = VmcGet(port);
-        memcpy(pa2, mcdraw + a1 * 128, 128);
+        if (mcdraw)
+            memcpy(pa2, mcdraw + a1 * 128, 128);
     }
 
     DeliverEvent(0x11, 0x2); // 0xf0000011, 0x0004
