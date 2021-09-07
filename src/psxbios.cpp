@@ -419,6 +419,12 @@ typedef struct {
     u32 _pad1[9];
 } TCB;
 static_assert(sizeof(TCB) == SIZEOF_TCB);
+const u32 TCB_REGS_IDX   = offsetof(TCB, reg)/ 4;
+const u32 TCB_HI_IDX     = offsetof(TCB, gpr_hi)/ 4;
+const u32 TCB_LO_IDX     = offsetof(TCB, gpr_lo)/ 4;
+const u32 TCB_PC_IDX     = offsetof(TCB, func)/ 4;
+const u32 TCB_STATUS_IDX = offsetof(TCB, SR)/ 4;
+const u32 TCB_CAUSE_IDX  = offsetof(TCB, cause)/ 4;
 
 struct DIRENTRY {
     char name[20];
@@ -2148,35 +2154,85 @@ static void initThread() {
 // using the PSX memory yield 2 advantages
 // 1/ Compatible with games that access register. Typically KNND writes the CP0_STATUS...
 // 2/ It is directly compatible with savestates as ram is savestat-ed
-static void saveContext(u32 tcb) {
-    auto context = (u32*)PSXM(tcb & USEG_MASK);
+static void saveContextR3K(u32* context) {
     for (auto i = 0u; i < 32; i++) {
-        StoreToLE(context[i + 2], GPR_ARRAY[i]);
+        StoreToLE(context[TCB_REGS_IDX + i], GPR_ARRAY[i]);
     }
-    StoreToLE(context[2 + 32 + 0], ra);
-    StoreToLE(context[2 + 32 + 1], hi);
-    StoreToLE(context[2 + 32 + 2], lo);
+    StoreToLE(context[TCB_HI_IDX], hi);
+    StoreToLE(context[TCB_LO_IDX], lo);
+}
+
+static void saveContextChangeThread(u32 tcb) {
+    auto context = (u32*)PSXM(tcb & USEG_MASK);
+    saveContextR3K(context);
+
+    StoreToLE(context[TCB_PC_IDX], ra);
+
     // NOTE: thread switch shall be done in a syscall to be safe. We don't need the syscall
     // for HLE. But we do need to update the CP0_STATUS bits accordingly
     CP0_EXCEPTION();
-    StoreToLE(context[2 + 32 + 3], CP0_STATUS);
-    StoreToLE(context[2 + 32 + 4], CP0_CAUSE);
+    StoreToLE(context[TCB_STATUS_IDX], CP0_STATUS);
+    StoreToLE(context[TCB_CAUSE_IDX], CP0_CAUSE);
 }
 
-static void restoreContext(u32 tcb) {
+// Similar as saveContextChangeThread but called from an Exception (IRQ)
+static void saveContextException() {
+    // Get current thread to save context
+    u32 pcb = LoadFromLE(psxMu32ref(G_PROCESS));
+    u32 tcb = LoadFromLE(psxMu32ref(pcb));
+
     auto context = (u32*)PSXM(tcb & USEG_MASK);
+    saveContextR3K(context);
+
+    StoreToLE(context[TCB_PC_IDX], CP0_EPC);
+
+    StoreToLE(context[TCB_STATUS_IDX], CP0_STATUS);
+    StoreToLE(context[TCB_CAUSE_IDX], CP0_CAUSE);
+}
+
+static void restoreContextR3K(u32* context) {
     for (auto i = 0u; i < 32; i++) {
-        GPR_ARRAY[i] = LoadFromLE(context[i + 2]);
+        GPR_ARRAY[i] = LoadFromLE(context[TCB_REGS_IDX + i]);
     }
-    pc0 = LoadFromLE(context[2 + 32 + 0]);
-    hi = LoadFromLE(context[2 + 32 + 1]);
-    lo = LoadFromLE(context[2 + 32 + 2]);
-    CP0_STATUS = LoadFromLE(context[2 + 32 + 3]);
+    hi = LoadFromLE(context[TCB_HI_IDX]);
+    lo = LoadFromLE(context[TCB_LO_IDX]);
+}
+
+static void restoreContextChangeThread(u32 tcb) {
+    auto context = (u32*)PSXM(tcb & USEG_MASK);
+    restoreContextR3K(context);
+
+    pc0 = LoadFromLE(context[TCB_PC_IDX]);
+
+    CP0_STATUS = LoadFromLE(context[TCB_STATUS_IDX]);
+    //CP0_CAUSE = LoadFromLE(context[TCB_CAUSE_IDX]);
     // NOTE: thread switch shall be done in a syscall to be safe. We don't need the syscall
     // for HLE. But we do need to update the CP0_STATUS bits accordingly
     // Test: "KKND Krossfire" will write the TCB CP0 sr reg manually.
     CP0_RFE();
-    CP0_CAUSE = LoadFromLE(context[2 + 32 + 4]);
+
+    // on PSX, k0 contains the jump destination
+    k0 = pc0;
+}
+
+// Similar as restoreContextChangeThread but called from an Exception (IRQ)
+static void restoreContextException() {
+    // Get current thread to restore context
+    // Warning: tcb could be different from saveContextException, which mean
+    // that you can switch thread during IRQ (Metal Gears Solid)
+    u32 pcb = LoadFromLE(psxMu32ref(G_PROCESS));
+    u32 tcb = LoadFromLE(psxMu32ref(pcb));
+
+    auto context = (u32*)PSXM(tcb & USEG_MASK);
+    restoreContextR3K(context);
+
+    pc0 = LoadFromLE(context[TCB_PC_IDX]);
+
+    CP0_STATUS = LoadFromLE(context[TCB_STATUS_IDX]);
+    //CP0_CAUSE = LoadFromLE(context[TCB_CAUSE_IDX]);
+
+    // on PSX, k0 contains the jump destination
+    k0 = pc0;
 }
 
 /*
@@ -2255,11 +2311,11 @@ void psxBios_ChangeTh(HLE_BIOS_CALL_ARGS) { // 10
     // Get current thread to save context
     u32 pcb = LoadFromLE(psxMu32ref(G_PROCESS));
     u32 tcb_current = LoadFromLE(psxMu32ref(pcb));
-    saveContext(tcb_current);
+    saveContextChangeThread(tcb_current);
 
     // Get to the new thread (will set pc0)
     u32 tcb = LoadFromLE(psxMu32ref(G_THREADS)) + th * SIZEOF_TCB;
-    restoreContext(tcb);
+    restoreContextChangeThread(tcb);
 
     // Save the new current thread
     psxMu32ref(pcb) = tcb | KSEG;
@@ -2330,40 +2386,10 @@ void psxBios_ChangeClearPad(HLE_BIOS_CALL_ARGS) { // 5b
 #endif
 
 #if HLE_ENABLE_ENTRYINT
-static unsigned interrupt_r26 = 0x8004E8B0;
-static bool s_saved = 0;
-
-static inline void SaveRegs() {
-    dbg_check(!s_saved);
-    s_saved = 1;
-    memcpy(g->regs, GPR_ARRAY, sizeof(GPR_ARRAY));
-#if HLE_MEDNAFEN_IFC
-    g->regs[33] = lo;
-    g->regs[34] = hi;
-#endif
-
-    g->regs[35] = pc0;
-
-    interrupt_r26 = CP0_EPC;
-}
-
-static inline void LoadRegs() {
-    dbg_check(s_saved);
-    s_saved = 0;
-    memcpy(GPR_ARRAY, g->regs, sizeof(GPR_ARRAY));
-#if HLE_MEDNAFEN_IFC
-    lo = g->regs[33];
-    hi = g->regs[34];
-#endif
-}
-
 void psxBios_ReturnFromException(HLE_BIOS_CALL_ARGS) { // 17
     PSXBIOS_LOG_SPAM("ReturnFromException", "DSlot=%d EPC=%08x\n", ((CP0_CAUSE >> 31) & 1), CP0_EPC);
 
-    LoadRegs();
-
-    pc0 = CP0_EPC;
-    k0 = interrupt_r26;
+    restoreContextException();
 
     CP0_RFE();
 
@@ -4151,9 +4177,8 @@ void psxBiosException80() {
     auto excode = (CP0_CAUSE & 0x3c) >> 2;
     switch (excode) {
         case 0x00: { // Interrupt
-            interrupt_r26 = CP0_EPC;
             // PSXCPU_LOG("interrupt\n");
-            SaveRegs();
+            saveContextException();
             sp = psxMu32(0x6c80); // create new stack for interrupt handlers
             biosInterrupt();
 
