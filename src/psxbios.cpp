@@ -2387,7 +2387,7 @@ void psxBios_ChangeClearPad(HLE_BIOS_CALL_ARGS) { // 5b
 
 #if HLE_ENABLE_ENTRYINT
 void psxBios_ReturnFromException(HLE_BIOS_CALL_ARGS) { // 17
-    PSXBIOS_LOG_SPAM("ReturnFromException", "DSlot=%d EPC=%08x\n", ((CP0_CAUSE >> 31) & 1), CP0_EPC);
+    //PSXBIOS_LOG_SPAM("ReturnFromException", "DSlot=%d EPC=%08x\n", ((CP0_CAUSE >> 31) & 1), CP0_EPC);
 
     restoreContextException();
 
