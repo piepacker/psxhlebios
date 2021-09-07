@@ -3804,6 +3804,8 @@ void psxBiosInitFull() {
         StoreToLE(psxMu32ref(pseudo_getconf+4), pseudo_getconf + 16);
     }
 #endif
+    // Reset GPU stat, in particular enable the display
+    GPU_W_STATUS(0x0300'0000);
 
     // Init value can be anything but 0/1
     memset(s_debug_ev, 0xFF, sizeof(s_debug_ev));
