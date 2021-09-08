@@ -86,6 +86,8 @@ const u32 G_DEVICES_SIZE  = 0x0154;
 const u32 TABLE_A0        = 0x0200; // vector for call a0
 const u32 TABLE_B0        = 0x0874; // vector for call b0
 const u32 TABLE_C0        = 0x0674; // vector for call c0
+
+const u32 TIMER_IRQ_AUTO_ACK = 0x8600;
 // End of Magic value
 
 // Statically allocate some data at the end of the kernel space
@@ -1970,7 +1972,7 @@ void psxBios_ChangeClearRCnt(HLE_BIOS_CALL_ARGS) { // 0a
 
     PSXBIOS_LOG("psxBios_%s: %x, %x\n", biosC0n[0x0a], a0, a1);
 
-    ptr = (u32*)PSXM((a0 << 2) + 0x8600);
+    ptr = (u32*)PSXM((a0 << 2) + TIMER_IRQ_AUTO_ACK);
     v0 = *ptr;
     *ptr = a1;
 
@@ -3101,9 +3103,16 @@ void psxBios__card_wait(HLE_BIOS_CALL_ARGS) { // 5d
 
 
 /* System calls C0 */
+static void init_timers() {
+    for (auto t = 0u; t < 4; t++) {
+        StoreToLE(psxMu32ref(TIMER_IRQ_AUTO_ACK + (t << 2)), 1);
+    }
+}
 
 void psxBios_InitRCnt(HLE_BIOS_CALL_ARGS) { // 00
     PSXBIOS_LOG("psxBios_%s: %x\n", biosC0n[0x00] ,a0);
+    init_timers();
+
     v0 = 0;
     pc0 = ra;
 }
@@ -3805,6 +3814,9 @@ void psxBiosInitFull() {
         // Store 2 dummy opcode that will be used to build an address (KERNEL_HEAP + 4)
         StoreToLE(psxMu32ref(pseudo_getconf), 0xA001);
         StoreToLE(psxMu32ref(pseudo_getconf+4), pseudo_getconf + 16);
+
+        // Init timer related variable
+        init_timers();
     }
 #endif
     // Reset GPU stat, in particular enable the display
@@ -4159,7 +4171,9 @@ void biosInterrupt() {
                     //softCallYield(SCRI_biosInterrupt_Rcnt, RcEV[i][1].fhandler);
                 }
                 //PSXBIOS_LOG("Clear ISTAT for RCNT %d\n", i);
-                Write_ISTAT(~(1 << (i + 4)));
+                auto auto_ack = LoadFromLE(psxMu32ref(TIMER_IRQ_AUTO_ACK + (i <<2)));
+                if (auto_ack)
+                    Write_ISTAT(~(1 << (i + 4)));
             }
         }
     }
