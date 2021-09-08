@@ -1617,6 +1617,9 @@ void psxBios_Load(HLE_BIOS_CALL_ARGS) { // 0x42
         intmax_t text_size = tdesc.t_size;
         psxFs_ReadSectorData2048(PSXM(text_addr), sector+1, (text_size + 2047) / 2048);
 
+        // Code is updated in RAM, tell the emulator to flush everything
+        ClearAllCaches();
+
         v0 = 1;
     }
     else {

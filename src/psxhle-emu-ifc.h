@@ -42,6 +42,7 @@
 #   include "core/timers.h"
 #   include "core/interrupt_controller.h"
 #   include "core/pad.h"
+#   include "core/cpu_code_cache.h"
 #endif
 
 #include <cstdint>
@@ -364,11 +365,16 @@ namespace CodeCache
 static void HleExecuteRecursive(u32 startPC, u32 returnPC) {
     CPU::CodeCache::HleExecuteRecursive(startPC, returnPC);
 }
+
+static void ClearAllCaches() {
+    CPU::ClearICache();
+    CPU::CodeCache::Flush();
+}
 #endif
 
 
 // HleYieldUid is a combination of the following traits:
-//  - the BIOS call table thunk address (A0/B0/C0 are standard BIOS thunks), max value 0xffff 
+//  - the BIOS call table thunk address (A0/B0/C0 are standard BIOS thunks), max value 0xffff
 //  - the BIOS call ID (the thunk uses this to look up the callsite), max value 0xff
 //  - the yield state of the HLE call being invoked (0 = first entry), max value 0xff
 //
