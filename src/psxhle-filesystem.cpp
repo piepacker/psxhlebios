@@ -275,7 +275,7 @@ fs::path psxFs_Canonicalize(const char* src) {
     // skip rooted slash. All paths are assumed to be rooted.
     // (there is no CWD mechanic within the psFs)
 
-    while (src[0] == '/') ++src;
+    while (src[0] == '/' || src[0] == '\\') ++src;
 
     auto result = fs::path(src);
     auto& uni = result.raw_modifiable_uni();
