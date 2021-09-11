@@ -85,7 +85,7 @@
 
 // qsort needs to be rewritten before it can be enabled. And once rewritten, probably can remove
 // the conditional build for it.. no good reason to disable it except right now it doesn't build --jstine
-#define HLE_ENABLE_QSORT        0
+#define HLE_ENABLE_QSORT        1
 
 // Controls yield behavior, whether the emulator runs recursively into an interpreter or attempts to
 // yield out instead.

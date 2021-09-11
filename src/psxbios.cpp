@@ -91,7 +91,8 @@ const u32 TIMER_IRQ_AUTO_ACK = 0x8600;
 // End of Magic value
 
 // Statically allocate some data at the end of the kernel space
-const u32 KERNEL_PCB         = 0xE000;                                                    // store process control block info here
+const u32 KERNEL_CP0_STATUS  = 0xE000;                                                    // used internally to disable exception
+const u32 KERNEL_PCB         = 0xE004;                                                    // store process control block info here
 const u32 KERNEL_TCB         = KERNEL_PCB + SIZEOF_PCB * 1;                               // store thread control block info here
 const u32 KERNEL_IRQ_HANDLER = KERNEL_TCB + SIZEOF_TCB * 16;                              // store irq handlers info here
 const u32 KERNEL_HEAP        = KERNEL_IRQ_HANDLER + SIZEOF_HANDLER * HANDLER_MAX;         // Start address of remaining space
@@ -518,6 +519,18 @@ static inline void CP0_RFE() {
     CP0_STATUS = (CP0_STATUS & ~CP0_MODE_MASK_RFE) | ((CP0_STATUS >> 2) & CP0_MODE_MASK_RFE);
 }
 
+// Idea is similar as CP0_ENTER_EXCEPTION/CP0_RFE but it keeps CP0_STATUS untouched
+// whereas CP0_ENTER_EXCEPTION/CP0_RFE can lose some bits
+static inline void INTERNAL_CP0_ENTER_CRITICAL_SECTION() {
+    // Save CP0 register
+    StoreToLE(psxMu32ref(KERNEL_CP0_STATUS), CP0_STATUS);
+    // Disable IRQ
+    CP0_STATUS &= (CP0_STATUS & ~CP0_MODE_MASK);
+}
+
+static inline void INTERNAL_CP0_EXIT_CRITICAL_SECTION() {
+    // Restore CP0 register
+    CP0_STATUS = LoadFromLE(psxMu32ref(KERNEL_CP0_STATUS));
 }
 
 static inline void DeliverEvent(u32 ev, u32 spec) {
@@ -1172,11 +1185,21 @@ loop:
 }
 
 void psxBios_qsort(HLE_BIOS_CALL_ARGS) { // 0x31
+    // Re-entrance is quite complex to support. A cheap solution
+    // is to disable IRQ, so qscmpfunc execution won't be interrupted
+    // which remove re-entrance fom the equation.
+    //
+    // Side effect: it would delay pending IRQs which shall be fine
+    // if the element array isn't huge
+    INTERNAL_CP0_ENTER_CRITICAL_SECTION();
+
     qswidth = a2;
     qscmpfunc = a3;
     qsort_main((char *)Ra0, (char *)Ra0 + a1 * a2);
 
     pc0 = ra;
+
+    INTERNAL_CP0_EXIT_CRITICAL_SECTION();
 }
 
 #if HLE_ENABLE_HEAP
