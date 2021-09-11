@@ -507,13 +507,17 @@ static inline void softCall2(u32 pc) {
     ra = sra;
 }
 
-static inline void CP0_RFE() {
-    CP0_STATUS = (CP0_STATUS & 0xfffffff0) | ((CP0_STATUS & 0x3c) >> 2);
+const u32 CP0_MODE_MASK     = 0x3F;
+const u32 CP0_MODE_MASK_RFE = 0x0F;
+
+static inline void CP0_ENTER_EXCEPTION() {
+    CP0_STATUS = (CP0_STATUS & ~CP0_MODE_MASK) | ((CP0_STATUS << 2) & CP0_MODE_MASK);
 }
 
-static inline void CP0_EXCEPTION() {
-    // Opposite of CP0_RFE
-    CP0_STATUS = (CP0_STATUS & 0xfffffff0) | ((CP0_STATUS & 0x0f) << 2);
+static inline void CP0_RFE() {
+    CP0_STATUS = (CP0_STATUS & ~CP0_MODE_MASK_RFE) | ((CP0_STATUS >> 2) & CP0_MODE_MASK_RFE);
+}
+
 }
 
 static inline void DeliverEvent(u32 ev, u32 spec) {
@@ -2190,7 +2194,7 @@ static void saveContextChangeThread(u32 tcb) {
 
     // NOTE: thread switch shall be done in a syscall to be safe. We don't need the syscall
     // for HLE. But we do need to update the CP0_STATUS bits accordingly
-    CP0_EXCEPTION();
+    CP0_ENTER_EXCEPTION();
     StoreToLE(context[TCB_STATUS_IDX], CP0_STATUS);
     StoreToLE(context[TCB_CAUSE_IDX], CP0_CAUSE);
 }
