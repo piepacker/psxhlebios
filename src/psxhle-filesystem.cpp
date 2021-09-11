@@ -269,13 +269,13 @@ fs::path psxFs_Canonicalize(const char* src) {
 
     constexpr char mnt_cdrom[] = "cdrom:";
     if (strncasecmp(src, mnt_cdrom, sizeof(mnt_cdrom) - 1) == 0) {
-        src += sizeof(mnt_cdrom);
+        src += sizeof(mnt_cdrom) - 1;
     }
 
     // skip rooted slash. All paths are assumed to be rooted.
     // (there is no CWD mechanic within the psFs)
 
-    if (src[0] == '/') ++src;
+    while (src[0] == '/') ++src;
 
     auto result = fs::path(src);
     auto& uni = result.raw_modifiable_uni();
