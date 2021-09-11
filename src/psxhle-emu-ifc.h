@@ -241,6 +241,10 @@ static void psxCpuClear(u32 startPC, int size_in_words)
     //psxCpu->Clear(startPC, size_in_words);
 }
 
+static void AdvanceClock(u64 tick_count) {
+    CPU::AddPendingTicks(200);
+}
+
 #endif
 
 static const uint32_t PS1_ICacheSize		= 0x00001000; // 4KB	(instruction cache)

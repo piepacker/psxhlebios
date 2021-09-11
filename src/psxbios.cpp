@@ -118,6 +118,7 @@ void StoreToBE(T& dest, const T& src) {
 
 // Keep trace of the event status to only print change
 static u8 s_debug_ev[256*256];
+static u8 s_print_waitevent_log = true;
 
 static bool s_suppress_spam = 0;
 static std::map<std::string, int> s_repeat_supress;
@@ -2050,30 +2051,44 @@ void psxBios_WaitEvent(HLE_BIOS_CALL_ARGS) { // 0a
     ev   = a0 & 0xff;
     spec = (a0 >> 8) & 0xff;
 
-    PSXBIOS_LOG("psxBios_%s %x,%x\n", biosB0n[0x0a], ev, spec);
+    if (s_print_waitevent_log)
+        PSXBIOS_LOG("psxBios_%s %x,%x\n", biosB0n[0x0a], ev, spec);
 
     dbg_check(spec < 32);
 
-    if (EventCB[ev][spec].status == EVENT_STATUS_FREE)
-    {
-        v0 = 0;
-        pc0 = ra;
-        return;
-    }
+    switch (EventCB[ev][spec].status) {
+        case EVENT_STATUS_PENDING:
+            // Event was delivered. Return valid and get back to enabled state
+            // Callback events (mode=EVENT_MODE_CALLBACK) do never set the pending state (and thus WaitEvent would hang forever).
+            if (EventCB[ev][spec].mode == EVENT_MODE_NO_CALLBACK) {
+                EventCB[ev][spec].status = EVENT_STATUS_ENABLED;
+            }
+            v0 = 1;
+            pc0 = ra;
+            s_print_waitevent_log = true;
+            break;
 
-    if (EventCB[ev][spec].status == EVENT_STATUS_PENDING)
-    {
-        /* Callback events (mode=EVENT_MODE_CALLBACK) do never set the pending state (and thus WaitEvent would hang forever). */
-        if (EventCB[ev][spec].mode == EVENT_MODE_NO_CALLBACK) {
-            EventCB[ev][spec].status = EVENT_STATUS_ENABLED;
-        }
-        v0 = 1;
-        pc0 = ra;
-        return;
-    }
+        case EVENT_STATUS_ENABLED:
+            // Event wasn't delivered yet
+            // 1/ advance time in the emulator. 200 is a random number. The minimum time for this call is around 30 ticks.
+            // But this call is about halting the CPU waiting an event (IRQ), so it is expected to be slow
+            AdvanceClock(200);
+            // 2/ Emulate an infinite loop
+            t1  = 0x0A;
+            pc0 = 0xB0;
+            // Let's avoid the spam
+            s_print_waitevent_log = false;
+            break;
 
-    v0 = 0;
-    pc0 = ra;
+        case EVENT_STATUS_DISABLED:
+        case EVENT_STATUS_FREE:
+        default:
+            s_print_waitevent_log = true;
+            // Event is invalid
+            v0 = 0;
+            pc0 = ra;
+            break;
+    }
 }
 
 void psxBios_TestEvent(HLE_BIOS_CALL_ARGS) { // 0b
