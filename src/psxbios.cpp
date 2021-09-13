@@ -65,11 +65,15 @@ const u32 TCB_THREAD_RESERVED = 0x4000;
 const u32 SIZEOF_PCB          = 0x8;
 const u32 SIZEOF_TCB          = 0xC0;
 const u32 SIZEOF_HANDLER      = 0x8;
+const u32 SIZEOF_EVCB         = 0x1C;
 const u32 PCB_MAX             = 1;
 // The real size of the TCB is set in system;cnf (or by a call to table:0xA id:0x9C)
 // or hacked by the game (Metal Gears Solid)
 u32 TCB_MAX                   = 4;
 const u32 HANDLER_MAX         = 4;
+// The real size of the EVCB is set in system;cnf (or by a call to table:0xA id:0x9C)
+// or hacked by the game (Final Fantasy 2)
+u32 EVCB_MAX                  = 16;
 
 const u32 G_HANDLERS      = 0x0100;
 const u32 G_HANDLERS_SIZE = 0x0104;
@@ -95,11 +99,12 @@ const u32 KERNEL_CP0_STATUS  = 0xE000;                                          
 const u32 KERNEL_PCB         = 0xE004;                                                    // store process control block info here
 const u32 KERNEL_TCB         = KERNEL_PCB + SIZEOF_PCB * 1;                               // store thread control block info here
 const u32 KERNEL_IRQ_HANDLER = KERNEL_TCB + SIZEOF_TCB * 16;                              // store irq handlers info here
-const u32 KERNEL_HEAP        = KERNEL_IRQ_HANDLER + SIZEOF_HANDLER * HANDLER_MAX;         // Start address of remaining space
+const u32 KERNEL_EVCB        = KERNEL_IRQ_HANDLER + SIZEOF_HANDLER * HANDLER_MAX;         // store event control block info here
+const u32 KERNEL_HEAP        = KERNEL_EVCB + SIZEOF_EVCB * 32;                            // Start address of remaining space
 const u32 KERNEL_END         = 0xFFFC;
+static_assert((KERNEL_HEAP + 0x1000) < KERNEL_END); // Keep 4K at the end
 // Statically allocate some data in the rom
 const u32 ROM_HLE_STATE     = 0x01000;
-const u32 ROM_EVENTS        = 0x40000;
 const u32 ROM_FONT_8140     = 0x66000;
 const u32 ROM_FONT_889F     = 0x69d68;
 
@@ -387,20 +392,17 @@ void VmcCreate(int port) {
 }
 #endif
 
-typedef struct {
-    u32 desc;
-    s32 status;
-    s32 mode;
-    u32 fhandler;
-} EvCB[32];
+enum class EVENT_STATUS : uint32_t {
+    FREE       = 0x0000,
+    DISABLED   = 0x1000,
+    ENABLED    = 0x2000, // AKA 'busy'
+    DELIVERED  = 0x4000, // AKA 'ready', 'pending'
+};
 
-const int EVENT_STATUS_FREE       = 0x0000;
-const int EVENT_STATUS_DISABLED   = 0x1000;
-const int EVENT_STATUS_ENABLED    = 0x2000; // AKA 'busy'
-const int EVENT_STATUS_DELIVERED  = 0x4000; // AKA 'ready'
-
-const int EVENT_MODE_CALLBACK    = 0x1000;
-const int EVENT_MODE_NO_CALLBACK = 0x2000;
+enum class EVENT_MODE : uint32_t {
+    CALLBACK    = 0x1000,
+    NO_CALLBACK = 0x2000,
+};
 
 /*
 typedef struct {
@@ -430,6 +432,16 @@ const u32 TCB_PC_IDX     = offsetof(TCB, func)/ 4;
 const u32 TCB_STATUS_IDX = offsetof(TCB, SR)/ 4;
 const u32 TCB_CAUSE_IDX  = offsetof(TCB, cause)/ 4;
 
+typedef struct {
+    u32 ev;
+    EVENT_STATUS status;
+    u32 spec;
+    EVENT_MODE mode;
+    u32 fhandler;
+    u32 pad0;
+    u32 pad1;
+} EVCB;
+
 struct DIRENTRY {
     char name[20];
     s32 attr;
@@ -446,16 +458,6 @@ typedef struct {
     u32  size;
     u32  mcfile;
 } FileDesc;
-
-#if HLE_ENABLE_EVENT
-static EvCB *EventCB;
-static EvCB *HwEV; // 0xf0
-static EvCB *EvEV; // 0xf1
-static EvCB *RcEV; // 0xf2
-static EvCB *UeEV; // 0xf3
-static EvCB *SwEV; // 0xf4
-static EvCB *ThEV; // 0xff
-#endif
 
 struct HleState {
     u32 version;
@@ -498,6 +500,7 @@ uint8_t hleSoftCall = 0;
 #define HLE_BIOS_CALL_ARGS HleYieldUid huid
 #define HLE_BIOS_INVOKE_ARGS huid
 
+// FIXME merge softCall and softCall2.
 static inline void softCall(u32 pc) {
     HleExecuteRecursive(pc, 0x80001000);
 }
@@ -533,15 +536,23 @@ static inline void INTERNAL_CP0_EXIT_CRITICAL_SECTION() {
     CP0_STATUS = LoadFromLE(psxMu32ref(KERNEL_CP0_STATUS));
 }
 
+static inline EVCB* GetEVCB() {
+    u32 evcb_addr = LoadFromLE(psxMu32ref(G_EVENTS));
+    return(EVCB*)PSXM(evcb_addr);
+}
+
 static inline void DeliverEvent(u32 ev, u32 spec) {
-    PSXBIOS_LOG("DeliverEvent %d;%d (%d)\n", ev, spec, EventCB[ev][spec].status);
-
-    if (EventCB[ev][spec].status != EVENT_STATUS_ENABLED) return;
-
-    if (EventCB[ev][spec].mode == EVENT_MODE_CALLBACK) {
-        softCall2(EventCB[ev][spec].fhandler);
-    } else
-        EventCB[ev][spec].status = EVENT_STATUS_DELIVERED;
+    // Quite spammy due to default kernel IRQ (vsync and timers)
+    //PSXBIOS_LOG("DeliverEvent %x;%x\n", ev, spec);
+    auto evcb = GetEVCB();
+    for (u32 i = 0; i < EVCB_MAX; i++) {
+        if (evcb[i].status == EVENT_STATUS::ENABLED && evcb[i].ev == ev && evcb[i].spec == spec) {
+            if (evcb[i].mode == EVENT_MODE::CALLBACK)
+                softCall2(evcb[i].fhandler);
+            else
+                evcb[i].status = EVENT_STATUS::DELIVERED;
+        }
+    }
 }
 
 void psxBios_todigit(HLE_BIOS_CALL_ARGS) // 0x0a
@@ -1811,12 +1822,12 @@ void psxBios__bu_init(HLE_BIOS_CALL_ARGS) { // 70
     //   handle for us via its own MIPS state machine. --jstine
 
     int baseState = SCRI_psxBios__bu_init_00;
-    DeliverEvent(baseState++, 0x11, 0x2); // 0xf0000011, 0x0004
-    DeliverEvent(baseState++, 0x81, 0x2); // 0xf4000001, 0x0004
+    DeliverEvent(baseState++, 0xf0000011, 0x0004);
+    DeliverEvent(baseState++, 0xf4000001, 0x0004);
 
 #else
-    DeliverEvent(0x11, 0x2); // 0xf0000011, 0x0004
-    DeliverEvent(0x81, 0x2); // 0xf4000001, 0x0004
+    DeliverEvent(0xf0000011, 0x0004);
+    DeliverEvent(0xf4000001, 0x0004);
 
     pc0 = ra;
 #endif
@@ -1884,9 +1895,9 @@ void psxBios__card_info(HLE_BIOS_CALL_ARGS) { // ab
     if (!VmcEnabled(0) && !VmcEnabled(1))
         ret = 0x8;
 
-    DeliverEvent(0x11, 0x2); // 0xf0000011, 0x0004
-//	DeliverEvent(0x81, 0x2); // 0xf4000001, 0x0004
-    DeliverEvent(0x81, ret); // 0xf4000001, 0x0004
+    DeliverEvent(0xf0000011, 0x0004);
+    DeliverEvent(0xf4000001, 1 << ret);
+
     v0 = 1; pc0 = ra;
 }
 
@@ -1895,8 +1906,7 @@ void psxBios__card_load(HLE_BIOS_CALL_ARGS) { // ac
 
     g->card_active_chan = a0;
 
-//	DeliverEvent(0x11, 0x2); // 0xf0000011, 0x0004
-    DeliverEvent(0x81, 0x2); // 0xf4000001, 0x0004
+    DeliverEvent(0xf4000001, 0x0004);
 
     v0 = 1; pc0 = ra;
 }
@@ -1922,6 +1932,9 @@ void psxBios_SysMalloc(HLE_BIOS_CALL_ARGS) { // 00
     g->kheap_size -= aligned_size;
 
     PSXBIOS_LOG("psxBios_%s 0x%x => %x\n", biosB0n[0x00], a0, v0);
+
+    // Let's avoid surprise
+    memset(PSXM(v0), 0, aligned_size);
 
     pc0 = ra;
 }
@@ -2009,92 +2022,97 @@ void psxBios_ChangeClearRCnt(HLE_BIOS_CALL_ARGS) { // 0a
 #endif
 
 #if HLE_ENABLE_EVENT
-/* gets ev for use with Event */
-#define GetEv() \
-    ev = (a0 >> 24) & 0xf; \
-    if (ev == 0xf) ev = 0x5; \
-    ev*= 32; \
-    ev+= a0&0x1f;
+static void initEvents() {
+    // Setup Global pointer to event blocks
+    StoreToLE(psxMu32ref(G_EVENTS), KERNEL_EVCB | KSEG);
+    StoreToLE(psxMu32ref(G_EVENTS_SIZE), SIZEOF_EVCB * EVCB_MAX);
 
-/* gets spec for use with EventCB */
-#define GetSpec() \
-    spec = 0; \
-    switch (a1) { \
-        case 0x0301: spec = 16; break; \
-        case 0x0302: spec = 17; break; \
-        default: \
-            for (i=0; i<16; i++) if (a1 & (1 << i)) { spec = i; break; } \
-            break; \
+    // Fill the struct with 0
+    auto* evcb = PSXM(KERNEL_EVCB);
+    memset(evcb, 0, SIZEOF_EVCB * EVCB_MAX);
+}
+
+static int getFreeEventSlot() {
+    auto evcb = GetEVCB();
+    for (int i = 0; i < (int)EVCB_MAX; i++) {
+        if (evcb[i].status == EVENT_STATUS::FREE) return i;
     }
+    return -1;
+}
 
 void psxBios_DeliverEvent(HLE_BIOS_CALL_ARGS) { // 07
-    int ev, spec;
-    int i;
+    PSXBIOS_LOG("psxBios_%s %x,%x\n", biosB0n[0x07], a0, a1);
 
-    GetEv();
-    GetSpec();
-
-    PSXBIOS_LOG("psxBios_%s %x,%x\n", biosB0n[0x07], ev, spec);
-
-    DeliverEvent(ev, spec);
+    DeliverEvent(a0, a1);
 
     pc0 = ra;
 }
 
 void psxBios_OpenEvent(HLE_BIOS_CALL_ARGS) { // 08
-    int ev, spec;
-    int i;
+    u32 evcb_max = LoadFromLE(psxMu32ref(G_EVENTS_SIZE)) / SIZEOF_EVCB;
+    if (evcb_max != EVCB_MAX) {
+        PSXBIOS_LOG("psxBios_OpenEvent() WARNING! max events was updated from %d to %d\n", EVCB_MAX, evcb_max);
+        EVCB_MAX = evcb_max;
+    }
 
-    GetEv();
-    GetSpec();
+    PSXBIOS_LOG("psxBios_%s (class:%x, spec:%x, mode:%x, func:%x)\n", biosB0n[0x08], a0, a1, a2, a3);
 
-    PSXBIOS_LOG("psxBios_%s %x,%x (class:%x, spec:%x, mode:%x, func:%x)\n", biosB0n[0x08], ev, spec, a0, a1, a2, a3);
+    auto slot = getFreeEventSlot();
+    if (slot < 0) {
+        v0 = slot;
+        pc0 = ra;
+        SysPrintf("OpenEvent: no more slot available\n");
+        return;
+    } else {
+        auto evcb = GetEVCB();
+        evcb[slot].status = EVENT_STATUS::DISABLED;
+        evcb[slot].ev = a0;
+        evcb[slot].spec = a1;
+        evcb[slot].mode = (EVENT_MODE)a2;
+        evcb[slot].fhandler = a3;
+    }
 
-    EventCB[ev][spec].status = EVENT_STATUS_DISABLED;
-    EventCB[ev][spec].mode = a2;
-    EventCB[ev][spec].fhandler = a3;
-
-    v0 = ev | (spec << 8);
+    v0 = slot | 0xf100'0000;
     pc0 = ra;
+
+    SysPrintf("\t\t\tslot => %x\n", v0);
+}
+
+void setEventStatus(u32 slot, EVENT_STATUS status) {
+    slot &= 0xFFFF;
+    auto evcb = GetEVCB();
+    evcb[slot].status = status;
 }
 
 void psxBios_CloseEvent(HLE_BIOS_CALL_ARGS) { // 09
-    int ev, spec;
+    PSXBIOS_LOG("psxBios_%s %x\n", biosB0n[0x09], a0);
 
-    ev   = a0 & 0xff;
-    spec = (a0 >> 8) & 0xff;
+    setEventStatus(a0, EVENT_STATUS::FREE);
 
-    PSXBIOS_LOG("psxBios_%s %x,%x\n", biosB0n[0x09], ev, spec);
-
-    EventCB[ev][spec].status = EVENT_STATUS_FREE;
-
-    v0 = 1; pc0 = ra;
+    v0 = 1;
+    pc0 = ra;
 }
 
 void psxBios_WaitEvent(HLE_BIOS_CALL_ARGS) { // 0a
-    int ev, spec;
-
-    ev   = a0 & 0xff;
-    spec = (a0 >> 8) & 0xff;
+    auto evcb = GetEVCB();
+    uint32_t slot = a0 & 0xFFFF;
 
     if (s_print_waitevent_log)
-        PSXBIOS_LOG("psxBios_%s %x,%x\n", biosB0n[0x0a], ev, spec);
+        PSXBIOS_LOG("psxBios_%s %x\n", biosB0n[0x0a], slot);
 
-    dbg_check(spec < 32);
-
-    switch (EventCB[ev][spec].status) {
-        case EVENT_STATUS_DELIVERED:
+    switch (evcb[slot].status) {
+        case EVENT_STATUS::DELIVERED:
             // Event was delivered. Return valid and get back to enabled state
             // Callback events (mode=EVENT_MODE_CALLBACK) do never set the pending/delivered state (and thus WaitEvent would hang forever).
-            if (EventCB[ev][spec].mode == EVENT_MODE_NO_CALLBACK) {
-                EventCB[ev][spec].status = EVENT_STATUS_ENABLED;
+            if (evcb[slot].mode == EVENT_MODE::NO_CALLBACK) {
+                evcb[slot].status = EVENT_STATUS::ENABLED;
             }
             v0 = 1;
             pc0 = ra;
             s_print_waitevent_log = true;
             break;
 
-        case EVENT_STATUS_ENABLED:
+        case EVENT_STATUS::ENABLED:
             // Event wasn't delivered yet
             // 1/ advance time in the emulator. 200 is a random number. The minimum time for this call is around 30 ticks.
             // But this call is about halting the CPU waiting an event (IRQ), so it is expected to be slow
@@ -2106,8 +2124,8 @@ void psxBios_WaitEvent(HLE_BIOS_CALL_ARGS) { // 0a
             s_print_waitevent_log = false;
             break;
 
-        case EVENT_STATUS_DISABLED:
-        case EVENT_STATUS_FREE:
+        case EVENT_STATUS::DISABLED:
+        case EVENT_STATUS::FREE:
         default:
             s_print_waitevent_log = true;
             // Event is invalid
@@ -2118,58 +2136,42 @@ void psxBios_WaitEvent(HLE_BIOS_CALL_ARGS) { // 0a
 }
 
 void psxBios_TestEvent(HLE_BIOS_CALL_ARGS) { // 0b
-    int ev, spec;
-
-    ev   = a0 & 0xff;
-    spec = (a0 >> 8) & 0xff;
-
-    dbg_check(spec < 32);
-
-    if (EventCB[ev][spec].status == EVENT_STATUS_DELIVERED) {
-        if (EventCB[ev][spec].mode == EVENT_MODE_NO_CALLBACK) {
-            EventCB[ev][spec].status = EVENT_STATUS_ENABLED;
+    auto slot = a0 & 0xFFFF;
+    auto evcb = GetEVCB();
+    if (evcb[slot].status == EVENT_STATUS::DELIVERED) {
+        if (evcb[slot].mode == EVENT_MODE::NO_CALLBACK) {
+            evcb[slot].status = EVENT_STATUS::ENABLED;
         }
         v0 = 1;
-    }
-    else {
+    } else {
         v0 = 0;
     }
+    pc0 = ra;
 
     // Print only TestEvent change. The spamy part is the polling of the result
     //PSXBIOS_LOG_SPAM("TestEvent", "psxBios_%s %x,%x: result=%x\n", biosB0n[0x0b], ev, spec, v0);
-    int key = a0 & 0xFFFF;
-    if (s_debug_ev[key] != v0) {
-        s_debug_ev[key] = v0;
-        PSXBIOS_LOG("psxBios_%s %x,%x: result=%x\n", biosB0n[0x0b], ev, spec, v0);
+    if (s_debug_ev[slot] != v0) {
+        s_debug_ev[slot] = v0;
+        PSXBIOS_LOG("psxBios_%s %x: result=%x\n", biosB0n[0x0b], slot, v0);
     }
-
-    pc0 = ra;
 }
 
 void psxBios_EnableEvent(HLE_BIOS_CALL_ARGS) { // 0c
-    int ev, spec;
+    PSXBIOS_LOG("psxBios_%s %x\n", biosB0n[0x0c], a0);
 
-    ev   = a0 & 0xff;
-    spec = (a0 >> 8) & 0xff;
+    setEventStatus(a0, EVENT_STATUS::ENABLED);
 
-    PSXBIOS_LOG("psxBios_%s %x,%x (class:%x)\n", biosB0n[0x0c], ev, spec, a0);
-
-    EventCB[ev][spec].status = EVENT_STATUS_ENABLED;
-
-    v0 = 1; pc0 = ra;
+    v0 = 1;
+    pc0 = ra;
 }
 
 void psxBios_DisableEvent(HLE_BIOS_CALL_ARGS) { // 0d
-    int ev, spec;
+    PSXBIOS_LOG("psxBios_%s %x\n", biosB0n[0x0d], a0);
 
-    ev   = a0 & 0xff;
-    spec = (a0 >> 8) & 0xff;
+    setEventStatus(a0, EVENT_STATUS::DISABLED);
 
-    PSXBIOS_LOG("psxBios_%s %x,%x\n", biosB0n[0x0d], ev, spec);
-
-    EventCB[ev][spec].status = EVENT_STATUS_DISABLED;
-
-    v0 = 1; pc0 = ra;
+    v0 = 1;
+    pc0 = ra;
 }
 #endif
 
@@ -2461,17 +2463,14 @@ void psxBios_HookEntryInt(HLE_BIOS_CALL_ARGS) { // 19
 
 #if HLE_ENABLE_EVENT
 void psxBios_UnDeliverEvent(HLE_BIOS_CALL_ARGS) { // 0x20
-    int ev, spec;
-    int i;
-
-    GetEv();
-    GetSpec();
-
-    PSXBIOS_LOG("psxBios_%s %x,%x\n", biosB0n[0x20], ev, spec);
-
-    if (EventCB[ev][spec].status == EVENT_STATUS_DELIVERED && EventCB[ev][spec].mode == EVENT_MODE_NO_CALLBACK)
-        EventCB[ev][spec].status = EVENT_STATUS_ENABLED;
-
+    PSXBIOS_LOG("psxBios_%s %x,%x\n", biosB0n[0x20], a0, a1);
+    auto evcb = GetEVCB();
+    for (u32 i = 0; i < EVCB_MAX; i++) {
+        if (evcb[i].status == EVENT_STATUS::DELIVERED && evcb[i].ev == a0 && evcb[i].spec == a1) {
+            if (evcb[i].mode == EVENT_MODE::NO_CALLBACK)
+                evcb[i].status = EVENT_STATUS::ENABLED;
+        }
+    }
     pc0 = ra;
 }
 #endif
@@ -2490,8 +2489,8 @@ void buread(void* ra1, int mcd, int length) {
     memcpy(ra1, ptr, length);
 
     if (fd.mode & 0x8000) {
-        DeliverEvent(0x11, 0x2); /* 0xf0000011, 0x0004 */
-        DeliverEvent(0x81, 0x2); /* 0xf4000001, 0x0004 */
+        DeliverEvent(0xf0000011, 0x0004);
+        DeliverEvent(0xf4000001, 0x0004);
         v0 = 0;
     }
     else
@@ -2510,8 +2509,8 @@ void buwrite(void* ra1, int mcd, int length) {
     g->FDesc[1 + mcd].offset += length;
 
     if (g->FDesc[1 + mcd].mode & 0x8000) {
-        DeliverEvent(0x11, 0x2); /* 0xf0000011, 0x0004 */
-        DeliverEvent(0x81, 0x2); /* 0xf4000001, 0x0004 */
+        DeliverEvent(0xf0000011, 0x0004);
+        DeliverEvent(0xf4000001, 0x0004);
         v0 = 0;
     }
     else
@@ -2822,11 +2821,11 @@ void psxBios_firstfile(HLE_BIOS_CALL_ARGS) { // 42
         g->nfile = 0;
         if (!strncmp(pa0, "bu00", 4)) {
             // firstfile() calls _card_read() internally, so deliver it's event
-            DeliverEvent(0x11, 0x2);
+            DeliverEvent(0xf0000011, 0x0004);
             bufile(1, a1);
         } else if (!strncmp(pa0, "bu10", 4)) {
             // firstfile() calls _card_read() internally, so deliver it's event
-            DeliverEvent(0x11, 0x2);
+            DeliverEvent(0xf0000011, 0x0004);
             bufile(2, a1);
         }
     }
@@ -3010,7 +3009,7 @@ void psxBios__card_write(HLE_BIOS_CALL_ARGS) { // 0x4e
         VmcWriteNV(port, a1 * 128, pa2, 128);
     }
 
-    DeliverEvent(0x11, 0x2); // 0xf0000011, 0x0004
+    DeliverEvent(0xf0000011, 0x0004);
 //	DeliverEvent(0x81, 0x2); // 0xf4000001, 0x0004
 
     v0 = 1; pc0 = ra;
@@ -3041,7 +3040,7 @@ void psxBios__card_read(HLE_BIOS_CALL_ARGS) { // 0x4f
             memcpy(pa2, mcdraw + a1 * 128, 128);
     }
 
-    DeliverEvent(0x11, 0x2); // 0xf0000011, 0x0004
+    DeliverEvent(0xf0000011, 0x0004);
 //	DeliverEvent(0x81, 0x2); // 0xf4000001, 0x0004
 
     v0 = 1; pc0 = ra;
@@ -3699,23 +3698,11 @@ void psxBiosInitFull() {
     psxBiosInit_Lib();
 
     g = (HleState*)(PSX_ROM_START + ROM_HLE_STATE);
-    static_assert(ROM_HLE_STATE + sizeof(HleState) < ROM_EVENTS, "Hle state is too big, overwrite event");
+    static_assert(ROM_HLE_STATE + sizeof(HleState) < ROM_FONT_8140, "Hle state is too big, overwrite font");
     g->version = 0;
 
 #if HLE_ENABLE_EVENT
-    constexpr size_t size = sizeof(EvCB) * 32;
-    EventCB = (EvCB *)(PSX_ROM_START + ROM_EVENTS);
-    if (HLE_FULL) {
-        memset(EventCB, 0, size * 6);
-    }
-    HwEV = EventCB;
-    EvEV = EventCB + 32;
-    RcEV = EventCB + 32 * 2;
-    UeEV = EventCB + 32 * 3;
-    SwEV = EventCB + 32 * 4;
-    ThEV = EventCB + 32 * 5;
-
-    static_assert((size * 6) + ROM_EVENTS < ROM_FONT_8140, "EventCB is too big, overwrite fonts");
+    initEvents();
 #endif
 
 #if HLE_ENABLE_THREAD
@@ -3885,6 +3872,7 @@ void psxBiosLoadExecCdrom() {
     psxFs_CacheFilesystem();
 
     bool updated_tcb = false;
+    bool updated_evcb = false;
     std::string exepath;
     if (auto sector = psxFs_GetFileSector("/SYSTEM.CNF;1")) {
         uint8_t buf[2048];
@@ -3917,6 +3905,14 @@ void psxBiosLoadExecCdrom() {
                         dbg_check(TCB_MAX <= 16);
                     }
                 }
+                if (strcasecmp(lvalue, "event") == 0) {
+                    if (rvalue) {
+                        updated_evcb = true;
+                        EVCB_MAX = strtol(rvalue, nullptr, 16);
+                        // Otherwise more memory shall be reserved on the kernel
+                        dbg_check(EVCB_MAX <= 32);
+                    }
+                }
             }
         }
     }
@@ -3926,6 +3922,8 @@ void psxBiosLoadExecCdrom() {
 
     if (updated_tcb)
         initThread();
+    if (updated_evcb)
+        initEvents();
 
     if (exepath.empty()) {
         exepath = "cdrom:///PSX.EXE";
@@ -4130,6 +4128,8 @@ void psxBios_PADpoll(int pad, u8* buf) {
 
 #if HLE_ENABLE_EXCEPTION
 void biosInterrupt() {
+    // FIXME: greg better read the mask register
+    // auto istat = Read_ISTAT() & Read_IMASK();
     auto istat = Read_ISTAT();
 
     // Looks like this is polling the pads on every interrupt, which is definitely
@@ -4184,38 +4184,26 @@ void biosInterrupt() {
         }
 //	}
 
+    // Note: DeliverEvent will use softCall2, old code was softcall. But it should work as exception return shall
+    // restore the ra register at the end
+
     if (istat & 0x1) { // Vsync
-        auto& event = RcEV[3][1];
-        if (event.status == EVENT_STATUS_ENABLED) {
-            if (event.mode == EVENT_MODE_CALLBACK)
-                softCall(event.fhandler);
-            else
-                event.status = EVENT_STATUS_DELIVERED;
-            //assert(false);
-            //softCallYield(SCRI_biosInterrupt_Vsync, RcEV[3][1].fhandler);
-//			hwWrite32(0x1f801070, ~(1));
-        }
+        DeliverEvent(0xF200'0000 + 3, 2);
+#if 0
+//		hwWrite32(0x1f801070, ~(1));
+        auto auto_ack = LoadFromLE(psxMu32ref(TIMER_IRQ_AUTO_ACK + (3 <<2)));
+        if (auto_ack)
+            Write_ISTAT(~(1));
+#endif
     }
 
-    if (istat & 0x70) { // Rcnt 0,1,2
-
-        for (int i = 0; i < 3; i++) {
-            if (Read_ISTAT() & (1 << (i + 4))) {
-                auto& event = RcEV[i][1];
-                if (event.status == EVENT_STATUS_ENABLED) {
-                    if (event.mode == EVENT_MODE_CALLBACK)
-                        softCall(event.fhandler);
-                    else
-                        event.status = EVENT_STATUS_DELIVERED;
-                    //assert(false);
-                    // FIXME: need to push the current rcnt on the stack.
-                    //softCallYield(SCRI_biosInterrupt_Rcnt, RcEV[i][1].fhandler);
-                }
-                //PSXBIOS_LOG("Clear ISTAT for RCNT %d\n", i);
-                auto auto_ack = LoadFromLE(psxMu32ref(TIMER_IRQ_AUTO_ACK + (i <<2)));
-                if (auto_ack)
-                    Write_ISTAT(~(1 << (i + 4)));
-            }
+    for (int i = 0; i < 3; i++) { // Rcnt 0,1,2
+        if (istat & (1 << (i + 4))) {
+            DeliverEvent(0xF200'0000 + i, 2);
+            //PSXBIOS_LOG("Clear ISTAT for RCNT %d\n", i);
+            auto auto_ack = LoadFromLE(psxMu32ref(TIMER_IRQ_AUTO_ACK + (i <<2)));
+            if (auto_ack)
+                Write_ISTAT(~(1 << (i + 4)));
         }
     }
 }
