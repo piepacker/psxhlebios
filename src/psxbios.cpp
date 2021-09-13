@@ -394,10 +394,10 @@ typedef struct {
     u32 fhandler;
 } EvCB[32];
 
-const int EVENT_STATUS_FREE     = 0x0000;
-const int EVENT_STATUS_DISABLED = 0x1000;
-const int EVENT_STATUS_ENABLED  = 0x2000; // AKA 'busy'
-const int EVENT_STATUS_PENDING  = 0x4000; // AKA 'ready'
+const int EVENT_STATUS_FREE       = 0x0000;
+const int EVENT_STATUS_DISABLED   = 0x1000;
+const int EVENT_STATUS_ENABLED    = 0x2000; // AKA 'busy'
+const int EVENT_STATUS_DELIVERED  = 0x4000; // AKA 'ready'
 
 const int EVENT_MODE_CALLBACK    = 0x1000;
 const int EVENT_MODE_NO_CALLBACK = 0x2000;
@@ -538,11 +538,10 @@ static inline void DeliverEvent(u32 ev, u32 spec) {
 
     if (EventCB[ev][spec].status != EVENT_STATUS_ENABLED) return;
 
-    // EventCB[ev][spec].status = EVENT_STATUS_PENDING;
     if (EventCB[ev][spec].mode == EVENT_MODE_CALLBACK) {
         softCall2(EventCB[ev][spec].fhandler);
     } else
-        EventCB[ev][spec].status = EVENT_STATUS_PENDING;
+        EventCB[ev][spec].status = EVENT_STATUS_DELIVERED;
 }
 
 void psxBios_todigit(HLE_BIOS_CALL_ARGS) // 0x0a
@@ -2084,9 +2083,9 @@ void psxBios_WaitEvent(HLE_BIOS_CALL_ARGS) { // 0a
     dbg_check(spec < 32);
 
     switch (EventCB[ev][spec].status) {
-        case EVENT_STATUS_PENDING:
+        case EVENT_STATUS_DELIVERED:
             // Event was delivered. Return valid and get back to enabled state
-            // Callback events (mode=EVENT_MODE_CALLBACK) do never set the pending state (and thus WaitEvent would hang forever).
+            // Callback events (mode=EVENT_MODE_CALLBACK) do never set the pending/delivered state (and thus WaitEvent would hang forever).
             if (EventCB[ev][spec].mode == EVENT_MODE_NO_CALLBACK) {
                 EventCB[ev][spec].status = EVENT_STATUS_ENABLED;
             }
@@ -2126,7 +2125,7 @@ void psxBios_TestEvent(HLE_BIOS_CALL_ARGS) { // 0b
 
     dbg_check(spec < 32);
 
-    if (EventCB[ev][spec].status == EVENT_STATUS_PENDING) {
+    if (EventCB[ev][spec].status == EVENT_STATUS_DELIVERED) {
         if (EventCB[ev][spec].mode == EVENT_MODE_NO_CALLBACK) {
             EventCB[ev][spec].status = EVENT_STATUS_ENABLED;
         }
@@ -2470,7 +2469,7 @@ void psxBios_UnDeliverEvent(HLE_BIOS_CALL_ARGS) { // 0x20
 
     PSXBIOS_LOG("psxBios_%s %x,%x\n", biosB0n[0x20], ev, spec);
 
-    if (EventCB[ev][spec].status == EVENT_STATUS_PENDING && EventCB[ev][spec].mode == EVENT_MODE_NO_CALLBACK)
+    if (EventCB[ev][spec].status == EVENT_STATUS_DELIVERED && EventCB[ev][spec].mode == EVENT_MODE_NO_CALLBACK)
         EventCB[ev][spec].status = EVENT_STATUS_ENABLED;
 
     pc0 = ra;
@@ -4191,7 +4190,7 @@ void biosInterrupt() {
             if (event.mode == EVENT_MODE_CALLBACK)
                 softCall(event.fhandler);
             else
-                event.status = EVENT_STATUS_PENDING;
+                event.status = EVENT_STATUS_DELIVERED;
             //assert(false);
             //softCallYield(SCRI_biosInterrupt_Vsync, RcEV[3][1].fhandler);
 //			hwWrite32(0x1f801070, ~(1));
@@ -4207,7 +4206,7 @@ void biosInterrupt() {
                     if (event.mode == EVENT_MODE_CALLBACK)
                         softCall(event.fhandler);
                     else
-                        event.status = EVENT_STATUS_PENDING;
+                        event.status = EVENT_STATUS_DELIVERED;
                     //assert(false);
                     // FIXME: need to push the current rcnt on the stack.
                     //softCallYield(SCRI_biosInterrupt_Rcnt, RcEV[i][1].fhandler);
