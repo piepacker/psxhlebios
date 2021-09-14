@@ -66,14 +66,6 @@ const u32 SIZEOF_PCB          = 0x8;
 const u32 SIZEOF_TCB          = 0xC0;
 const u32 SIZEOF_HANDLER      = 0x8;
 const u32 SIZEOF_EVCB         = 0x1C;
-const u32 PCB_MAX             = 1;
-// The real size of the TCB is set in system;cnf (or by a call to table:0xA id:0x9C)
-// or hacked by the game (Metal Gears Solid)
-u32 TCB_MAX                   = 4;
-const u32 HANDLER_MAX         = 4;
-// The real size of the EVCB is set in system;cnf (or by a call to table:0xA id:0x9C)
-// or hacked by the game (Final Fantasy 2)
-u32 EVCB_MAX                  = 16;
 
 const u32 G_HANDLERS      = 0x0100;
 const u32 G_HANDLERS_SIZE = 0x0104;
@@ -94,15 +86,17 @@ const u32 TABLE_C0        = 0x0674; // vector for call c0
 const u32 TIMER_IRQ_AUTO_ACK = 0x8600;
 // End of Magic value
 
-// Statically allocate some data at the end of the kernel space
-const u32 KERNEL_CP0_STATUS  = 0xE000;                                                    // used internally to disable exception
-const u32 KERNEL_PCB         = 0xE004;                                                    // store process control block info here
-const u32 KERNEL_TCB         = KERNEL_PCB + SIZEOF_PCB * 1;                               // store thread control block info here
-const u32 KERNEL_IRQ_HANDLER = KERNEL_TCB + SIZEOF_TCB * 16;                              // store irq handlers info here
-const u32 KERNEL_EVCB        = KERNEL_IRQ_HANDLER + SIZEOF_HANDLER * HANDLER_MAX;         // store event control block info here
-const u32 KERNEL_HEAP        = KERNEL_EVCB + SIZEOF_EVCB * 32;                            // Start address of remaining space
+// Default value of internal structure size
+u32 PCB_MAX                   = 1;
+u32 TCB_MAX                   = 4;
+u32 HANDLER_MAX               = 4;
+u32 EVCB_MAX                  = 32;
+
+// Statically allocate some data at the end of the kernel space (0xE000-0xFFFF)
+const u32 KERNEL_CP0_STATUS  = 0xE000;     // used internally to disable exception
+const u32 KERNEL_HEAP        = 0xE100;     // Put a heap in the middle for kernel data structure
+const u32 KERNEL_HEAP_END    = 0xF800;
 const u32 KERNEL_END         = 0xFFFC;
-static_assert((KERNEL_HEAP + 0x1000) < KERNEL_END); // Keep 4K at the end
 // Statically allocate some data in the rom
 const u32 ROM_HLE_STATE     = 0x01000;
 const u32 ROM_FONT_8140     = 0x66000;
@@ -499,6 +493,7 @@ uint8_t hleSoftCall = 0;
 // its really helpful to be able to change the call signature of all these functions at once.
 #define HLE_BIOS_CALL_ARGS HleYieldUid huid
 #define HLE_BIOS_INVOKE_ARGS huid
+#define HLE_BIOS_DUMMY_ARGS 0
 
 // FIXME merge softCall and softCall2.
 static inline void softCall(u32 pc) {
@@ -2022,16 +2017,6 @@ void psxBios_ChangeClearRCnt(HLE_BIOS_CALL_ARGS) { // 0a
 #endif
 
 #if HLE_ENABLE_EVENT
-static void initEvents() {
-    // Setup Global pointer to event blocks
-    StoreToLE(psxMu32ref(G_EVENTS), KERNEL_EVCB | KSEG);
-    StoreToLE(psxMu32ref(G_EVENTS_SIZE), SIZEOF_EVCB * EVCB_MAX);
-
-    // Fill the struct with 0
-    auto* evcb = PSXM(KERNEL_EVCB);
-    memset(evcb, 0, SIZEOF_EVCB * EVCB_MAX);
-}
-
 static int getFreeEventSlot() {
     auto evcb = GetEVCB();
     for (int i = 0; i < (int)EVCB_MAX; i++) {
@@ -2176,28 +2161,6 @@ void psxBios_DisableEvent(HLE_BIOS_CALL_ARGS) { // 0d
 #endif
 
 #if HLE_ENABLE_THREAD
-static void initThread() {
-    // hardcore implementation of threads. It matches PSX ABI to please "KKND Krossfire"
-    // that got the wonderful idea to update directly kernel global variable to switch
-    // between thread
-
-    // Setup Global pointer to process and thread blocks
-    StoreToLE(psxMu32ref(G_PROCESS), KERNEL_PCB | KSEG);
-    StoreToLE(psxMu32ref(G_PROCESS_SIZE), SIZEOF_PCB * PCB_MAX);
-
-    StoreToLE(psxMu32ref(G_THREADS), KERNEL_TCB | KSEG);
-    StoreToLE(psxMu32ref(G_THREADS_SIZE), SIZEOF_TCB * TCB_MAX);
-
-    // Fill the process control block. Basically a pointer to current thread (so TCB slot 0)
-    StoreToLE(psxMu32ref(KERNEL_PCB), KERNEL_TCB | KSEG); // store pointer to process control block
-    // Fill the thread control block. Basically set RESERVED/FREE on threads
-    memset(PSXM(KERNEL_TCB), 0, SIZEOF_TCB * TCB_MAX);
-    StoreToLE(psxMu32ref(KERNEL_TCB), TCB_THREAD_RESERVED);
-    for (auto i = 1u; i < TCB_MAX; i++) {
-        StoreToLE(psxMu32ref(KERNEL_TCB + i * SIZEOF_TCB), TCB_THREAD_FREE);
-    }
-}
-
 // It would be doable to save registers into a C structure, however
 // using the PSX memory yield 2 advantages
 // 1/ Compatible with games that access register. Typically KNND writes the CP0_STATUS...
@@ -3393,6 +3356,81 @@ void psxBiosPrintCall(int table) {
     }
 }
 
+static void initProcessAndThread(u32 kernel_pcb, u32 kernel_tcb) {
+    // hardcore implementation of threads. It matches PSX ABI to please "KKND Krossfire"
+    // that got the wonderful idea to update directly kernel global variable to switch
+    // between thread
+
+    // Setup Global pointer to process and thread blocks
+    StoreToLE(psxMu32ref(G_PROCESS), kernel_pcb | KSEG);
+    StoreToLE(psxMu32ref(G_PROCESS_SIZE), SIZEOF_PCB * PCB_MAX);
+
+    StoreToLE(psxMu32ref(G_THREADS), kernel_tcb | KSEG);
+    StoreToLE(psxMu32ref(G_THREADS_SIZE), SIZEOF_TCB * TCB_MAX);
+
+    // Fill the process control block. Basically a pointer to current thread (so TCB slot 0)
+    StoreToLE(psxMu32ref(kernel_pcb), kernel_tcb | KSEG); // store pointer to process control block
+    // Fill the thread control block. Basically set RESERVED/FREE on threads
+    memset(PSXM(kernel_tcb), 0, SIZEOF_TCB * TCB_MAX);
+    StoreToLE(psxMu32ref(kernel_tcb), TCB_THREAD_RESERVED);
+    for (auto i = 1u; i < TCB_MAX; i++) {
+        StoreToLE(psxMu32ref(kernel_tcb + i * SIZEOF_TCB), TCB_THREAD_FREE);
+    }
+}
+
+static void initEvents(u32 kernel_evcb) {
+    // Setup Global pointer to event blocks
+    StoreToLE(psxMu32ref(G_EVENTS), kernel_evcb | KSEG);
+    StoreToLE(psxMu32ref(G_EVENTS_SIZE), SIZEOF_EVCB * EVCB_MAX);
+
+    // Fill the struct with 0
+    auto* evcb = PSXM(kernel_evcb);
+    memset(evcb, 0, SIZEOF_EVCB * EVCB_MAX);
+}
+
+static void initHandlers(u32 kernel_handler) {
+    // Setup Global pointer to irqs handlers
+    StoreToLE(psxMu32ref(G_HANDLERS), kernel_handler | KSEG);
+    StoreToLE(psxMu32ref(G_HANDLERS_SIZE), SIZEOF_HANDLER * HANDLER_MAX);
+    // Fill the IRQ handlers info with 0
+    memset(PSXM(kernel_handler), 0, SIZEOF_HANDLER * HANDLER_MAX);
+}
+
+static void psxBiosInitKernelDataStructure() {
+    // By pure lazyness, reuse the hle allocator
+
+    // Allocating those data structure in ram provide 2 advantages
+    // They are compatible with game that read/write into them
+    // RAM is savestated automatically
+
+    // Reserve memory
+    a0 = KERNEL_HEAP;
+    a1 = KERNEL_HEAP_END - KERNEL_HEAP;
+    psxBios_SysInitMemory(HLE_BIOS_DUMMY_ARGS);
+
+    // Allocate PCB
+    a0 = SIZEOF_PCB * PCB_MAX;
+    psxBios_SysMalloc(HLE_BIOS_DUMMY_ARGS);
+    u32 kernel_pcb = v0;
+    // Allocate TCB
+    a0 = SIZEOF_TCB * TCB_MAX;
+    psxBios_SysMalloc(HLE_BIOS_DUMMY_ARGS);
+    u32 kernel_tcb = v0;
+    // Allocate IRQ HANDLER
+    a0 = SIZEOF_HANDLER * HANDLER_MAX;
+    psxBios_SysMalloc(HLE_BIOS_DUMMY_ARGS);
+    u32 kernel_handler = v0;
+    // Allocate EVCB
+    a0 = SIZEOF_EVCB * EVCB_MAX;
+    psxBios_SysMalloc(HLE_BIOS_DUMMY_ARGS);
+    u32 kernel_evcb = v0;
+
+    // Then init the various data structure
+    initProcessAndThread(kernel_pcb, kernel_tcb);
+    initEvents(kernel_evcb);
+    initHandlers(kernel_handler);
+}
+
 void psxBiosInit_Lib() {
     //biosA0[0x40] = psxBios_sys_a0_40;
     //biosA0[0x41] = psxBios_LoadTest;
@@ -3702,25 +3740,10 @@ void psxBiosInitFull() {
     static_assert(ROM_HLE_STATE + sizeof(HleState) < ROM_FONT_8140, "Hle state is too big, overwrite font");
     g->version = 0;
 
-#if HLE_ENABLE_EVENT
-    initEvents();
-#endif
-
-#if HLE_ENABLE_THREAD
-    initThread();
-#endif
+    psxBiosInitKernelDataStructure();
 
 #if HLE_ENABLE_ENTRYINT
     g->jmp_int = 0;
-    // Save IRQ handlers info into PSX memory
-    // 1/ allow game to use it outside of OS
-    // 2/ Compatible with savestate without extra burden
-    //
-    // Setup Global pointer to irqs handlers
-    StoreToLE(psxMu32ref(G_HANDLERS), KERNEL_IRQ_HANDLER | KSEG);
-    StoreToLE(psxMu32ref(G_HANDLERS_SIZE), SIZEOF_HANDLER * HANDLER_MAX);
-    // Fill the IRQ handlers info with 0
-    memset(PSXM(KERNEL_IRQ_HANDLER), 0, SIZEOF_HANDLER * HANDLER_MAX);
 #endif
 
 #if HLE_ENABLE_PAD
@@ -3872,8 +3895,6 @@ const char* uri_find_domain_colon(const char* src) {
 void psxBiosLoadExecCdrom() {
     psxFs_CacheFilesystem();
 
-    bool updated_tcb = false;
-    bool updated_evcb = false;
     std::string exepath;
     if (auto sector = psxFs_GetFileSector("/SYSTEM.CNF;1")) {
         uint8_t buf[2048];
@@ -3900,18 +3921,12 @@ void psxBiosLoadExecCdrom() {
                 }
                 if (strcasecmp(lvalue, "tcb") == 0) {
                     if (rvalue) {
-                        updated_tcb = true;
                         TCB_MAX = strtol(rvalue, nullptr, 16);
-                        // Otherwise more memory shall be reserved on the kernel
-                        dbg_check(TCB_MAX <= 16);
                     }
                 }
                 if (strcasecmp(lvalue, "event") == 0) {
                     if (rvalue) {
-                        updated_evcb = true;
                         EVCB_MAX = strtol(rvalue, nullptr, 16);
-                        // Otherwise more memory shall be reserved on the kernel
-                        dbg_check(EVCB_MAX <= 32);
                     }
                 }
             }
@@ -3921,10 +3936,8 @@ void psxBiosLoadExecCdrom() {
         printf("[INFO]: SYSTEM.CNF not found. Falling back on PSX.EXE...\n");
     }
 
-    if (updated_tcb)
-        initThread();
-    if (updated_evcb)
-        initEvents();
+    // TCB/Event size can be updated by system;cnf setting
+    psxBiosInitKernelDataStructure();
 
     if (exepath.empty()) {
         exepath = "cdrom:///PSX.EXE";
