@@ -2376,6 +2376,8 @@ void psxBios_StartPAD(HLE_BIOS_CALL_ARGS) { // 13
     g->pad_started = 1;
     Write_IMASK((unsigned short)(Read_IMASK() | 0x1));
     CP0_STATUS |= 0x401;
+
+    v0 = 1;
     pc0 = ra;
 }
 
