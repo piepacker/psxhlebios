@@ -477,6 +477,7 @@ struct HleState {
     // Exception/IRQ
     u32 regs[36]; // 32 GPR + lo + hi + pc + npc (duck)
     // Misc
+    u32 initial_sp;
 };
 static HleState* g;
 
@@ -1837,6 +1838,28 @@ void psxBios__96_init(HLE_BIOS_CALL_ARGS) { // 71
 
 void psxBios__96_remove(HLE_BIOS_CALL_ARGS) { // 72
     PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x72]);
+
+    pc0 = ra;
+}
+
+void psxBios_SetConf(HLE_BIOS_CALL_ARGS) { // 9c
+    PSXBIOS_LOG("psxBios_%s: %x, %x, %x\n", biosA0n[0x9c], a0, a1, a2);
+
+    EVCB_MAX = a0;
+    TCB_MAX = a1;
+    g->initial_sp = a2;
+
+    psxBiosInitKernelDataStructure();
+
+    pc0 = ra;
+}
+
+void psxBios_GetConf(HLE_BIOS_CALL_ARGS) { // 9d
+    PSXBIOS_LOG("psxBios_%s: %x, %x, %x\n", biosA0n[0x9d], a0, a1, a2);
+
+    StoreToLE(psxMu32ref(a0), EVCB_MAX);
+    StoreToLE(psxMu32ref(a1), TCB_MAX);
+    StoreToLE(psxMu32ref(a2), g->initial_sp);
 
     pc0 = ra;
 }
@@ -3396,7 +3419,7 @@ static void initHandlers(u32 kernel_handler) {
     memset(PSXM(kernel_handler), 0, SIZEOF_HANDLER * HANDLER_MAX);
 }
 
-static void psxBiosInitKernelDataStructure() {
+void psxBiosInitKernelDataStructure() {
     // By pure lazyness, reuse the hle allocator
 
     // Allocating those data structure in ram provide 2 advantages
@@ -3532,8 +3555,8 @@ void psxBiosInit_Lib() {
     //biosA0[0x99] = psxBios_EnableKernelIORedirection;
     //biosA0[0x9a] = psxBios_sys_a0_9a;
     //biosA0[0x9b] = psxBios_sys_a0_9b;
-    //biosA0[0x9c] = psxBios_SetConf;
-    //biosA0[0x9d] = psxBios_GetConf;
+    biosA0[0x9c] = psxBios_SetConf;
+    biosA0[0x9d] = psxBios_GetConf;
     //biosA0[0x9e] = psxBios_sys_a0_9e;
 
     biosA0[0x9f] = psxBios_SetMem;
@@ -4050,6 +4073,7 @@ void psxBiosLoadExecCdrom() {
         SetPC(tdesc._pc);
         gp  = tdesc._gp;
         sp  = tdesc.s_addr ? tdesc.s_addr : 0x801fff00;
+        g->initial_sp = sp; // For getConf
 
         printf("(hlebios) pc0   = %08X\n", pc0);
         printf("(hlebios) gp    = %08X\n", gp);

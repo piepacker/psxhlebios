@@ -43,6 +43,7 @@ void psxBiosLoadExecCdrom();
 void psxBiosShutdown();
 void psxBiosException80();
 void psxBiosFreeze(int Mode);
+void psxBiosInitKernelDataStructure();
 
 int HleDispatchCall(uint32_t pc);
 
