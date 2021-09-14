@@ -502,12 +502,12 @@ uint8_t hleSoftCall = 0;
 
 // FIXME merge softCall and softCall2.
 static inline void softCall(u32 pc) {
-    HleExecuteRecursive(pc, 0x80001000);
+    HleExecuteRecursive(pc, kSoftCallBaseRetAddr);
 }
 
 static inline void softCall2(u32 pc) {
     u32 sra = ra;
-    HleExecuteRecursive(pc, 0x80001000);
+    HleExecuteRecursive(pc, kSoftCallBaseRetAddr);
     ra = sra;
 }
 

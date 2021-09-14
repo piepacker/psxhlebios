@@ -333,6 +333,9 @@ static uint32_t  psxMu32   (uint32_t addr) { return  (uint32_t&)*PSXM(addr); }
 #define Rv0 ((char *)PSXM(v0))
 #define Rsp ((char *)PSXM(sp))
 
+// Pick an unmapped area of PSX memory to treat as soft call return address.
+static const u32 kSoftCallBaseRetAddr = 0x8100'0000;
+
 #if HLE_PCSX_IFC
 
 static void HleExecuteRecursive(u32 startPC, u32 returnPC) {
@@ -340,7 +343,7 @@ static void HleExecuteRecursive(u32 startPC, u32 returnPC) {
     ra = returnPC;
 
     hleSoftCall = TRUE;
-    while (pc0 != 0x80001000) psxCpu->ExecuteBlock();
+    while (pc0 != kSoftCallBaseRetAddr) psxCpu->ExecuteBlock();
     hleSoftCall = FALSE;
 }
 #endif
@@ -352,7 +355,7 @@ static void HleExecuteRecursive(u32 startPC, u32 returnPC) {
 
     // FIXME: add recursive interpreter execution support to mednafen
     hleSoftCall = TRUE;
-    while (pc0 != 0x80001000) PSX_CPU->ExecuteBlock();
+    while (pc0 != kSoftCallBaseRetAddr) PSX_CPU->ExecuteBlock();
     hleSoftCall = FALSE;
 }
 #endif
@@ -388,9 +391,6 @@ static void ClearAllCaches() {
 using HleYieldUid = uint32_t;
 
 HleYieldUid MakeYieldCallId(uint32_t biosCallPage, uint32_t biosCallId);
-
-// Pick an unmapped area of PSX memory to treat as soft call return address.
-static const u32 kSoftCallBaseRetAddr = 0x8100'0000;
 
 static bool IsHlePC(u32 pc) {
     return ((pc & 0xff00'0000) == kSoftCallBaseRetAddr);
