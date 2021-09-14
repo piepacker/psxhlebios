@@ -4128,9 +4128,7 @@ void psxBios_PADpoll(int pad, u8* buf) {
 
 #if HLE_ENABLE_EXCEPTION
 void biosInterrupt() {
-    // FIXME: greg better read the mask register
-    // auto istat = Read_ISTAT() & Read_IMASK();
-    auto istat = Read_ISTAT();
+    auto istat = Read_ISTAT() & Read_IMASK();
 
     // Looks like this is polling the pads on every interrupt, which is definitely
     // not what we want. Will have to dig into it later and see if I can figure out why
@@ -4186,6 +4184,8 @@ void biosInterrupt() {
 
     // Note: DeliverEvent will use softCall2, old code was softcall. But it should work as exception return shall
     // restore the ra register at the end
+
+    // VSYNC and Rcnt 0,1,2 shall be run at priority 1 (actually syscall c0/0x0 set the priority)
 
     if (istat & 0x1) { // Vsync
         DeliverEvent(0xF200'0000 + 3, 2);
