@@ -464,7 +464,7 @@ struct HleState {
     // Entry point
     u32 jmp_int; // PSX address
     // Pad
-    u32 pad_stopped;
+    u32 pad_started;
     u32 pad_buf;  // PSX address
     u32 pad_buf1; // PSX address
     u32 pad_buf2; // PSX address
@@ -2387,7 +2387,7 @@ void psxBios_InitPAD(HLE_BIOS_CALL_ARGS) { // 0x12
 void psxBios_StartPAD(HLE_BIOS_CALL_ARGS) { // 13
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x13]);
 
-    g->pad_stopped = 0;
+    g->pad_started = 1;
     Write_IMASK((unsigned short)(Read_IMASK() | 0x1));
     CP0_STATUS |= 0x401;
     pc0 = ra;
@@ -2396,7 +2396,7 @@ void psxBios_StartPAD(HLE_BIOS_CALL_ARGS) { // 13
 void psxBios_StopPAD(HLE_BIOS_CALL_ARGS) { // 14
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x14]);
 
-    g->pad_stopped = 1;
+    g->pad_started = 0;
     g->pad_buf1 = 0;
     g->pad_buf2 = 0;
     pc0 = ra;
@@ -2967,6 +2967,7 @@ void psxBios_InitCARD(HLE_BIOS_CALL_ARGS) { // 4a
     PSXBIOS_LOG("psxBios_%s: %x\n", biosB0n[0x4a], a0);
 
     g->cardState = 0;
+    g->pad_started = (a0) ? 1 : 0;
 
     pc0 = ra;
 }
@@ -3723,7 +3724,7 @@ void psxBiosInitFull() {
 #endif
 
 #if HLE_ENABLE_PAD
-    g->pad_stopped = 1;
+    g->pad_started = 0;
     g->pad_buf  = 0;
     g->pad_buf1 = 0;
     g->pad_buf2 = 0;
@@ -4169,7 +4170,7 @@ void biosInterrupt() {
         #endif
         }
 
-        if (!g->pad_stopped)  {
+        if (g->pad_started)  {
     #if HLE_ENABLE_PAD
             if (g->pad_buf1) {
                 psxBios_PADpoll(0, PSXM(g->pad_buf1));
