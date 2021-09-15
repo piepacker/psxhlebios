@@ -4337,11 +4337,17 @@ void psxBiosException80() {
 
                 /* Normally this should cover SYS(00h, SYS(04h but they don't do anything relevant so... */
                 default:
+                    // Jumping flash, sigh...
+                    // DeliverEvent might fiddle with the TCB content, so you need to save and restore registers
+                    saveContextException();
+                    DeliverEvent(0xf000'0010, 0x4000);
+                    restoreContextException();
                     break;
             }
-            pc0 = CP0_EPC + 4;
 
+            pc0 = CP0_EPC + 4;
             CP0_RFE();
+
             return;
 
         case 0xa:  // Reserved instruction exception
