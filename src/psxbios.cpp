@@ -3892,6 +3892,19 @@ void psxBiosInitFull() {
         StoreToLE(psxMu32ref(pseudo_getconf), 0xA001);
         StoreToLE(psxMu32ref(pseudo_getconf+4), pseudo_getconf + 16);
 
+        // Another hack for The king of fighter. This one is very funny, they patch
+        // the exception handler with a trampoline to likely fix a bug in the kernel
+        // 3c02a001 lui v0, a001
+        // 2442dfac addiu v0, v0, dfac
+        // 00400008 jr v0
+        // 00000000 nop
+        // 00000000 nop
+        // Meanwhile due to a nullptr they write the GPU DMA linked list into 0x-0x30 range address
+        // Due to nullptr in the C0 vector in HLE, the game patch ends up killing the DMA linked list
+        u32 pseudo_ExceptionHandler = pseudo_getconf - 128;
+        StoreToLE(psxMu32ref(TABLE_C0 + 6 * 4), pseudo_ExceptionHandler);
+        StoreToLE(psxMu32ref(pseudo_ExceptionHandler + 116), pseudo_ExceptionHandler);
+
         // Init timer related variable
         init_timers();
     }
