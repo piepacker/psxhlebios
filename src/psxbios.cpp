@@ -1686,6 +1686,9 @@ void psxBios_LoadExec(HLE_BIOS_CALL_ARGS) { // 51
 void psxBios_FlushCache(HLE_BIOS_CALL_ARGS) { // 44
     PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x44]);
 
+    // Code is updated in RAM, tell the emulator to flush everything
+    ClearAllCaches();
+
     pc0 = ra;
 }
 
