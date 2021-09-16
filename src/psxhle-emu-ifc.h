@@ -232,7 +232,7 @@ static void Write_MEMCTRL2(u32 val) { Bus::HleWriteMEMCTRL2(val); }
 static u32 Read_MEMCTRL2() { return Bus::HleReadMEMCTRL2(); }  // 1060
 
 static void SetPC(uint32_t newpc) {
-    CPU::SetPC(newpc);
+    CPU::SetPC_(newpc);
 }
 
 static void psxCpuClear(u32 startPC, int size_in_words)
