@@ -2412,7 +2412,7 @@ void psxBios_PAD_init(HLE_BIOS_CALL_ARGS) { // 15
 }
 
 void psxBios_PAD_dr(HLE_BIOS_CALL_ARGS) { // 16
-    PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x16]);
+    //PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x16]);
 
     v0 = -1; pc0 = ra;
 }
