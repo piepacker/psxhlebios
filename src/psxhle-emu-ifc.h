@@ -377,6 +377,15 @@ static void ClearAllCaches() {
     CPU::ClearICache();
     CPU::CodeCache::Flush();
 }
+
+static void ClearAllCaches(u32 address, u32 size) {
+    auto masked = address & 0x1fff'ffff;
+
+    if (masked < PS1_RamMirrorSize) {
+        // CPU::ClearICache();
+        CPU::CodeCache::InvalidateCodePages(masked, size / 4u);
+    }
+}
 #endif
 
 

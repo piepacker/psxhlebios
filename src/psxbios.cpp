@@ -1007,6 +1007,9 @@ void psxBios_memcpy(HLE_BIOS_CALL_ARGS) { // 0x2a
         pc0 = ra;
         return;
     }
+    // Invalidate memory in case destination was a code segment (GPolice)
+    ClearAllCaches(a0, a2);
+
     while ((s32)a2-- > 0) {
         *p1++ = *p2++;
     }
