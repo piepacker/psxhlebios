@@ -54,35 +54,6 @@
 #   pragma warning(disable : 4505)      // unref'd function removed.
 #endif
 
-#define HLE_FULL                1       // enables full ROM-less HLE support
-
-// HLE exception handler depends on full HLE (everything in the list has to be 1)
-#define HLE_ENABLE_EXCEPTION    (HLE_FULL && 1)
-
-// Dev notes:
-//  * Tekken 2/3 do not use threads
-//  * Tekken 2/3 do not use root counters (rcnt)
-//  * Tekken 2/3 do not use the Event system (DeliverEvent, etc)
-//  * Tekken 2/3 do not use GPU APIs
-
-#define HLE_ENABLE_HEAP         (HLE_FULL || 1)
-#define HLE_ENABLE_GPU			(HLE_FULL || 1)
-#define HLE_ENABLE_RCNT			(HLE_FULL || 1)
-
-// Rest of these are not useful due to interdependence on exception handler and full hle.
-
-#define HLE_ENABLE_THREAD       (HLE_FULL || 1)
-
-#ifndef HLE_ENABLE_MCD
-#define HLE_ENABLE_MCD			(HLE_FULL || 1)
-#endif
-
-#define HLE_ENABLE_EVENT        (HLE_FULL || 1)
-#define HLE_ENABLE_LOADEXEC		(HLE_FULL || 1)       // depends on ISO9660 filesystem API
-
-#define HLE_ENABLE_PAD			(HLE_PCSX_IFC || (HLE_FULL && 1))
-#define HLE_ENABLE_ENTRYINT     (HLE_PCSX_IFC || (HLE_FULL && 1))
-
 // qsort needs to be rewritten before it can be enabled. And once rewritten, probably can remove
 // the conditional build for it.. no good reason to disable it except right now it doesn't build --jstine
 #define HLE_ENABLE_QSORT        1

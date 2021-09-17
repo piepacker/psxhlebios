@@ -127,38 +127,6 @@ static bool is_suppressed(const char* check) {
     return s_suppress_spam && (++s_repeat_supress[check] > 2);
 };
 
-
-static bool hle_config_get_bool(std::string opt) {
-    return 1;
-    auto woo = "PSX_HLE_CONFIG_" + opt;
-    if (const char* const env = getenv(woo.c_str())) {
-        auto walk = env;
-        while(isspace(int(walk[0]))) ++walk;
-        char bval = walk[0];
-        while(isspace(int(walk[0]))) ++walk;
-
-        if (!env[0] || env[1] || !isdigit(int(bval))) {
-            fprintf(stderr, "env parse error at %s=%s\nValid boolean expressions are 0 or 1\n", woo.c_str(), env);
-        }
-
-        if (bval == '0') return 0;
-        return 1;       // any non-zero value is boolean true
-    }
-    return 0;
-}
-
-static bool hle_config_env_rcnt		() { return hle_config_get_bool("RCNT"      ); }
-static bool hle_config_env_pad		() { return hle_config_get_bool("PAD"       ); }
-static bool hle_config_env_fileio	() { return hle_config_get_bool("FILEIO"    ); }
-static bool hle_config_env_mcd		() { return hle_config_get_bool("MCD"       ); }
-static bool hle_config_env_loadexec	() { return hle_config_get_bool("LOADEXEC"  ); }
-static bool hle_config_env_gpu		() { return hle_config_get_bool("GPU"       ); }
-static bool hle_config_env_thread   () { return hle_config_get_bool("THREAD"    ); }
-static bool hle_config_env_entryint () { return hle_config_get_bool("ENTRYINT"  ); }
-static bool hle_config_env_heap     () { return hle_config_get_bool("HEAP"      ); }
-static bool hle_config_env_event    () { return hle_config_get_bool("EVENT"     ); }
-static bool hle_config_env_full     () { return hle_config_get_bool("FULL"      ); }
-
 #undef SysPrintf
 #define SysPrintf(fmt, ...) (printf(fmt, ##__VA_ARGS__), fflush(stdout))
 
@@ -312,7 +280,7 @@ void VmcWriteNV(int port, int dst_offset, const void* src, int size) {
 }
 #endif
 
-#if HLE_MEDNAFEN_IFC && HLE_ENABLE_MCD
+#if HLE_MEDNAFEN_IFC
 #include "mednafen/psx/frontio.h"
 extern FrontIO *PSX_FIO;        // defined by libretro. dunno why this isn't baked into the PSX core for mednafen. --jstine
 void VmcWriteNV(int port, int slot, const void* src, int offset, int size) {
@@ -346,7 +314,7 @@ void VmcCreate(int port) {
 }
 #endif
 
-#if HLE_DUCKSTATION_IFC && HLE_ENABLE_MCD
+#if HLE_DUCKSTATION_IFC
 void VmcDirty(int port) {
     dbg_check((u32)port < 2);
     // FIXME need to set m_changed of the memory card in DS to flush the memory
@@ -1206,7 +1174,6 @@ void psxBios_qsort(HLE_BIOS_CALL_ARGS) { // 0x31
     INTERNAL_CP0_EXIT_CRITICAL_SECTION();
 }
 
-#if HLE_ENABLE_HEAP
 void psxBios_malloc(HLE_BIOS_CALL_ARGS) { // 0x33
     u32 *chunk, *newchunk = NULL;
     u32 dsize = 0, csize, cstat;
@@ -1361,7 +1328,6 @@ void psxBios_realloc(HLE_BIOS_CALL_ARGS) { // 0x38
     }
 }
 
-
 /* InitHeap(void *block , int n) */
 void psxBios_InitHeap(HLE_BIOS_CALL_ARGS) { // 0x39
     unsigned int size;
@@ -1382,7 +1348,6 @@ void psxBios_InitHeap(HLE_BIOS_CALL_ARGS) { // 0x39
 
     pc0 = ra;
 }
-#endif
 
 // stdoutbuf is not strictly necessary - we chould use native putc instead.
 // But it can be helpful as a rule, especially if the emulator becomes threaded/asyncronous later.
@@ -1548,7 +1513,6 @@ _start:
     pc0 = ra;
 }
 
-#if HLE_ENABLE_MCD
 void psxBios_format(HLE_BIOS_CALL_ARGS) { // 0x41
     PSXBIOS_LOG_NEW("format");
     // TO BE tested on PCSX
@@ -1568,7 +1532,6 @@ void psxBios_format(HLE_BIOS_CALL_ARGS) { // 0x41
     }
     pc0 = ra;
 }
-#endif
 
 /*
  *	int Exec(struct EXEC *header , int argc , char **argv);
@@ -1620,7 +1583,6 @@ static void psxBios_ExecRet() {
     pc0 = ra;
 }
 
-#if HLE_ENABLE_LOADEXEC
 extern void         psxFs_CacheFilesystem();
 extern bool         psxFs_LoadExecutableHeader(const char* path, PSX_EXE_HEADER& dest);
 extern psdisc_sec_t psxFs_GetFileSector(const char* path);
@@ -1679,7 +1641,6 @@ void psxBios_LoadExec(HLE_BIOS_CALL_ARGS) { // 51
     a0 = 0xf000; a1 = 0; a2 = 0;
     psxBios_Exec(HLE_BIOS_INVOKE_ARGS);
 }
-#endif
 
 void psxBios_FlushCache(HLE_BIOS_CALL_ARGS) { // 44
     PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x44]);
@@ -1715,7 +1676,6 @@ void psxBios_FlushCache(HLE_BIOS_CALL_ARGS) { // 44
 #define DMA_R(addr)         (g_dma.ReadRegister ((addr) & Bus::DMA_MASK))
 #endif
 
-#if HLE_ENABLE_GPU
 void psxBios_GPU_dw(HLE_BIOS_CALL_ARGS) { // 0x46
     int size;
     s32 *ptr;
@@ -1799,7 +1759,6 @@ void psxBios_GPU_GetGPUStatus(HLE_BIOS_CALL_ARGS) { // 0x4d
     v0 = GPU_R_STATUS();
     pc0 = ra;
 }
-#endif
 
 /* TODO FIXME : Not compliant. -1 indicates failure but using 1 for now. */
 void psxBios_get_cd_status(HLE_BIOS_CALL_ARGS) //a6
@@ -1808,7 +1767,6 @@ void psxBios_get_cd_status(HLE_BIOS_CALL_ARGS) //a6
     pc0 = ra;
 }
 
-#if HLE_ENABLE_EVENT
 void psxBios__bu_init(HLE_BIOS_CALL_ARGS) { // 70
     PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x70]);
 
@@ -1829,7 +1787,6 @@ void psxBios__bu_init(HLE_BIOS_CALL_ARGS) { // 70
     pc0 = ra;
 #endif
 }
-#endif
 
 void psxBios__96_init(HLE_BIOS_CALL_ARGS) { // 71
     PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x71]);
@@ -1890,7 +1847,6 @@ void psxBios_SetMem(HLE_BIOS_CALL_ARGS) { // 9f
     pc0 = ra;
 }
 
-#if HLE_ENABLE_MCD
 void psxBios__card_info(HLE_BIOS_CALL_ARGS) { // ab
     PSXBIOS_LOG("psxBios_%s: %x\n", biosA0n[0xab], a0);
 
@@ -1935,7 +1891,6 @@ void psxBios__card_auto(HLE_BIOS_CALL_ARGS) { // 0xAD
 
     pc0 = ra;
 }
-#endif
 
 /* System calls B0 */
 
@@ -1958,7 +1913,6 @@ void psxBios_SysMalloc(HLE_BIOS_CALL_ARGS) { // 00
     pc0 = ra;
 }
 
-#if HLE_ENABLE_RCNT
 void psxBios_SetRCnt(HLE_BIOS_CALL_ARGS) { // 02
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x02]);
 
@@ -2038,9 +1992,7 @@ void psxBios_ChangeClearRCnt(HLE_BIOS_CALL_ARGS) { // 0a
 //	psxRegs.CP0.n.Status|= 0x404;
     pc0 = ra;
 }
-#endif
 
-#if HLE_ENABLE_EVENT
 static int getFreeEventSlot() {
     auto evcb = GetEVCB();
     for (int i = 0; i < (int)EVCB_MAX; i++) {
@@ -2182,9 +2134,7 @@ void psxBios_DisableEvent(HLE_BIOS_CALL_ARGS) { // 0d
     v0 = 1;
     pc0 = ra;
 }
-#endif
 
-#if HLE_ENABLE_THREAD
 // It would be doable to save registers into a C structure, however
 // using the PSX memory yield 2 advantages
 // 1/ Compatible with games that access register. Typically KNND writes the CP0_STATUS...
@@ -2357,9 +2307,7 @@ void psxBios_ChangeTh(HLE_BIOS_CALL_ARGS) { // 10
 
     PSXBIOS_LOG("psxBios_%s: from %x to %x\n", biosB0n[0x10], tcb_current, tcb);
 }
-#endif
 
-#if HLE_ENABLE_PAD
 void psxBios_InitPAD(HLE_BIOS_CALL_ARGS) { // 0x12
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x12]);
 
@@ -2420,9 +2368,7 @@ void psxBios_ChangeClearPad(HLE_BIOS_CALL_ARGS) { // 5b
 
     pc0 = ra;
 }
-#endif
 
-#if HLE_ENABLE_ENTRYINT
 void psxBios_ReturnFromException(HLE_BIOS_CALL_ARGS) { // 17
     //PSXBIOS_LOG_SPAM("ReturnFromException", "DSlot=%d EPC=%08x\n", ((CP0_CAUSE >> 31) & 1), CP0_EPC);
 
@@ -2448,9 +2394,7 @@ void psxBios_HookEntryInt(HLE_BIOS_CALL_ARGS) { // 19
     g->jmp_int = a0;
     pc0 = ra;
 }
-#endif
 
-#if HLE_ENABLE_EVENT
 void psxBios_UnDeliverEvent(HLE_BIOS_CALL_ARGS) { // 0x20
     PSXBIOS_LOG("psxBios_%s %x,%x\n", biosB0n[0x20], a0, a1);
     auto evcb = GetEVCB();
@@ -2462,9 +2406,7 @@ void psxBios_UnDeliverEvent(HLE_BIOS_CALL_ARGS) { // 0x20
     }
     pc0 = ra;
 }
-#endif
 
-#if HLE_ENABLE_MCD
 void buread(void* ra1, int mcd, int length) {
     auto mcdraw = VmcGet(mcd - 1);
     if (mcdraw == nullptr)
@@ -3049,8 +2991,6 @@ void psxBios__get_error(HLE_BIOS_CALL_ARGS) // 55
     pc0 = ra;
 }
 
-#endif
-
 void psxBios_Krom2RawAdd(HLE_BIOS_CALL_ARGS) { // 0x51
     int i = 0;
 
@@ -3108,7 +3048,6 @@ void psxBios_GetB0Table(HLE_BIOS_CALL_ARGS) { // 57
     pc0 = ra;
 }
 
-#if HLE_ENABLE_MCD
 void psxBios__card_chan(HLE_BIOS_CALL_ARGS) { // 0x58
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x58]);
 
@@ -3129,8 +3068,6 @@ void psxBios__card_wait(HLE_BIOS_CALL_ARGS) { // 5d
     v0 = 1;
     pc0 = ra;
 }
-#endif
-
 
 /* System calls C0 */
 static void init_timers() {
@@ -3153,7 +3090,6 @@ void psxBios_InitException(HLE_BIOS_CALL_ARGS) { // 01
     pc0 = ra;
 }
 
-#if HLE_ENABLE_ENTRYINT
 /*
  * int SysEnqIntRP(int index , long *queue);
  */
@@ -3220,7 +3156,6 @@ void psxBios_SysDeqIntRP(HLE_BIOS_CALL_ARGS) { // 03
     v0 = 0;
     pc0 = ra;
 }
-#endif
 
 void psxBios_SysInitMemory(HLE_BIOS_CALL_ARGS) { // 08
     PSXBIOS_LOG("psxBios_%s: %x (0x%x)\n", biosC0n[0x08], a0, a1);
@@ -3265,13 +3200,11 @@ void psxBiosInit_StdLib() {
     biosB0[0x3d] = psxBios_putchar;
     biosB0[0x3f] = psxBios_puts;
 
-#if HLE_ENABLE_MCD
     biosA0[0x00] = psxBios_open;
     biosA0[0x01] = psxBios_lseek;
     biosA0[0x02] = psxBios_read;
     biosA0[0x03] = psxBios_write;
     biosA0[0x04] = psxBios_close;
-#endif
 
     //biosA0[0x05] = psxBios_ioctl;
     //biosA0[0x06] = psxBios_exit;
@@ -3322,17 +3255,13 @@ void psxBiosInit_StdLib() {
 
     //biosA0[0x32] = psxBios_strtod;
 
-#if HLE_ENABLE_HEAP
-    if (hle_config_env_heap()) {
-        biosA0[0x33] = psxBios_malloc;
-        biosA0[0x34] = psxBios_free;
-        //biosA0[0x35] = psxBios_lsearch;
-        //biosA0[0x36] = psxBios_bsearch;
-        biosA0[0x37] = psxBios_calloc;
-        biosA0[0x38] = psxBios_realloc;
-        biosA0[0x39] = psxBios_InitHeap;
-    }
-#endif
+    biosA0[0x33] = psxBios_malloc;
+    biosA0[0x34] = psxBios_free;
+    //biosA0[0x35] = psxBios_lsearch;
+    //biosA0[0x36] = psxBios_bsearch;
+    biosA0[0x37] = psxBios_calloc;
+    biosA0[0x38] = psxBios_realloc;
+    biosA0[0x39] = psxBios_InitHeap;
 
     //biosA0[0x3a] = psxBios__exit;
     biosA0[0x3b] = psxBios_getchar;
@@ -3344,8 +3273,6 @@ void psxBiosInit_StdLib() {
 
     biosA0[0x44] = psxBios_FlushCache;
 }
-
-static bool is_hle_full_mode = 0;
 
 void psxBiosInit() {
     PSXBIOS_LOG("psxBiosInit\n");
@@ -3461,18 +3388,12 @@ void psxBiosInit_Lib() {
     //biosA0[0x40] = psxBios_sys_a0_40;
     //biosA0[0x41] = psxBios_LoadTest;
 
-#if HLE_ENABLE_LOADEXEC
-    if (hle_config_env_loadexec()) {
-        biosA0[0x42] = psxBios_Load;
-        biosA0[0x51] = psxBios_LoadExec;
-        biosA0[0x43] = psxBios_Exec;
-    }
-#endif
-
+    biosA0[0x42] = psxBios_Load;
+    biosA0[0x51] = psxBios_LoadExec;
+    biosA0[0x43] = psxBios_Exec;
 
     //biosA0[0x45] = psxBios_InstallInterruptHandler;
 
-#if HLE_ENABLE_GPU
     biosA0[0x46] = psxBios_GPU_dw;
     biosA0[0x47] = psxBios_mem2vram;
     biosA0[0x48] = psxBios_SendGPU;
@@ -3481,7 +3402,6 @@ void psxBiosInit_Lib() {
     biosA0[0x4b] = psxBios_GPU_SendPackets;
     biosA0[0x4c] = psxBios_sys_a0_4c;
     biosA0[0x4d] = psxBios_GPU_GetGPUStatus;
-#endif
 
     //biosA0[0x4e] = psxBios_GPU_sync;	
     //biosA0[0x4f] = psxBios_sys_a0_4f;
@@ -3576,19 +3496,15 @@ void psxBiosInit_Lib() {
     //biosA0[0xa9] = psxBios_bufs_cb_2;
     //biosA0[0xaa] = psxBios_bufs_cb_3;
 
-#if HLE_ENABLE_EVENT
-    if (hle_config_env_event()) {
-        biosA0[0x70] = psxBios__bu_init;
-        biosB0[0x07] = psxBios_DeliverEvent;
-        biosB0[0x08] = psxBios_OpenEvent;
-        biosB0[0x09] = psxBios_CloseEvent;
-        biosB0[0x0a] = psxBios_WaitEvent;
-        biosB0[0x0b] = psxBios_TestEvent;
-        biosB0[0x0c] = psxBios_EnableEvent;
-        biosB0[0x0d] = psxBios_DisableEvent;
-        biosB0[0x20] = psxBios_UnDeliverEvent;
-    }
-#endif
+    biosA0[0x70] = psxBios__bu_init;
+    biosB0[0x07] = psxBios_DeliverEvent;
+    biosB0[0x08] = psxBios_OpenEvent;
+    biosB0[0x09] = psxBios_CloseEvent;
+    biosB0[0x0a] = psxBios_WaitEvent;
+    biosB0[0x0b] = psxBios_TestEvent;
+    biosB0[0x0c] = psxBios_EnableEvent;
+    biosB0[0x0d] = psxBios_DisableEvent;
+    biosB0[0x20] = psxBios_UnDeliverEvent;
 
     biosA0[0xad] = psxBios__card_auto;
     //biosA0[0xae] = psxBios_bufs_cd_4;
@@ -3603,39 +3519,27 @@ void psxBiosInit_Lib() {
     biosB0[0x00] = psxBios_SysMalloc;
     //biosB0[0x01] = psxBios_SysFree;
 
-#if HLE_ENABLE_RCNT
-    if (hle_config_env_rcnt()) {
-        biosB0[0x02] = psxBios_SetRCnt;
-        biosB0[0x03] = psxBios_GetRCnt;
-        biosB0[0x04] = psxBios_StartRCnt;
-        biosB0[0x05] = psxBios_StopRCnt;
-        biosB0[0x06] = psxBios_ResetRCnt;
-        biosC0[0x0a] = psxBios_ChangeClearRCnt;
-    }
-#endif
+    biosB0[0x02] = psxBios_SetRCnt;
+    biosB0[0x03] = psxBios_GetRCnt;
+    biosB0[0x04] = psxBios_StartRCnt;
+    biosB0[0x05] = psxBios_StopRCnt;
+    biosB0[0x06] = psxBios_ResetRCnt;
+    biosC0[0x0a] = psxBios_ChangeClearRCnt;
 
-#if HLE_ENABLE_THREAD
-    if (hle_config_env_thread()) {
-        biosB0[0x0e] = psxBios_OpenTh;
-        biosB0[0x0f] = psxBios_CloseTh;
-        biosB0[0x10] = psxBios_ChangeTh;
-        //biosB0[0x11] = psxBios_psxBios_b0_11;
-    }
-#endif
+    biosB0[0x0e] = psxBios_OpenTh;
+    biosB0[0x0f] = psxBios_CloseTh;
+    biosB0[0x10] = psxBios_ChangeTh;
+    //biosB0[0x11] = psxBios_psxBios_b0_11;
 
-#if HLE_ENABLE_PAD
     biosB0[0x12] = psxBios_InitPAD;
     biosB0[0x13] = psxBios_StartPAD;
     biosB0[0x14] = psxBios_StopPAD;
     biosB0[0x15] = psxBios_PAD_init;
     biosB0[0x16] = psxBios_PAD_dr;
     biosB0[0x5b] = psxBios_ChangeClearPad;
-#endif
 
-#if HLE_ENABLE_ENTRYINT
     biosB0[0x18] = psxBios_ResetEntryInt;
     biosB0[0x19] = psxBios_HookEntryInt;
-#endif
 
     //biosB0[0x1a] = psxBios_sys_b0_1a;
     //biosB0[0x1b] = psxBios_sys_b0_1b;
@@ -3661,7 +3565,6 @@ void psxBiosInit_Lib() {
     //biosB0[0x30] = psxBios_sys_b0_30;
     //biosB0[0x31] = psxBios_sys_b0_31;
 
-#if HLE_ENABLE_MCD
     biosA0[0x08] = psxBios_getc;
     biosA0[0x09] = psxBios_putc;
     biosB0[0x32] = psxBios_open;
@@ -3682,37 +3585,28 @@ void psxBiosInit_Lib() {
     biosB0[0x47] = psxBios_AddDevice;
     biosB0[0x48] = psxBios_RemoveDevice;
     //biosB0[0x49] = psxBios_PrintInstalledDevices;
-#endif
 
-#if HLE_ENABLE_MCD
     biosB0[0x42] = psxBios_firstfile;
     biosB0[0x43] = psxBios_nextfile;
     biosB0[0x44] = psxBios_rename;
     biosB0[0x45] = psxBios_delete;
-#endif
 
-#if HLE_ENABLE_MCD
     biosB0[0x41] = psxBios_format;
-#endif
 
-#if HLE_ENABLE_MCD
-    if (hle_config_env_mcd()) {
-        biosA0[0xab] = psxBios__card_info;
-        biosA0[0xac] = psxBios__card_load;
+    biosA0[0xab] = psxBios__card_info;
+    biosA0[0xac] = psxBios__card_load;
 
-        biosB0[0x4a] = psxBios_InitCARD;
-        biosB0[0x4b] = psxBios_StartCARD;
-        biosB0[0x4c] = psxBios_StopCARD;
-        //biosB0[0x4d] = psxBios_sys_b0_4d;
-        biosB0[0x4e] = psxBios__card_write;
-        biosB0[0x4f] = psxBios__card_read;
-        biosB0[0x50] = psxBios__new_card;
-        biosB0[0x5c] = psxBios__card_status;
-        biosB0[0x58] = psxBios__card_chan;
-        biosB0[0x55] = psxBios__get_error;
-        biosB0[0x5d] = psxBios__card_wait;
-    }
-#endif
+    biosB0[0x4a] = psxBios_InitCARD;
+    biosB0[0x4b] = psxBios_StartCARD;
+    biosB0[0x4c] = psxBios_StopCARD;
+    //biosB0[0x4d] = psxBios_sys_b0_4d;
+    biosB0[0x4e] = psxBios__card_write;
+    biosB0[0x4f] = psxBios__card_read;
+    biosB0[0x50] = psxBios__new_card;
+    biosB0[0x5c] = psxBios__card_status;
+    biosB0[0x58] = psxBios__card_chan;
+    biosB0[0x55] = psxBios__get_error;
+    biosB0[0x5d] = psxBios__card_wait;
 
     biosB0[0x51] = psxBios_Krom2RawAdd;
     //biosB0[0x52] = psxBios_sys_b0_52;
@@ -3725,11 +3619,9 @@ void psxBiosInit_Lib() {
     biosC0[0x00] = psxBios_InitRCnt;
     biosC0[0x01] = psxBios_InitException;
 
-#if HLE_ENABLE_ENTRYINT
     biosB0[0x17] = psxBios_ReturnFromException;
     biosC0[0x02] = psxBios_SysEnqIntRP;
     biosC0[0x03] = psxBios_SysDeqIntRP;
-#endif
 
     //biosC0[0x04] = psxBios_get_free_EvCB_slot;
     //biosC0[0x05] = psxBios_get_free_TCB_slot;
@@ -3768,148 +3660,134 @@ void psxBiosInitFull() {
 
     psxBiosInitKernelDataStructure();
 
-#if HLE_ENABLE_ENTRYINT
     g->jmp_int = 0;
-#endif
 
-#if HLE_ENABLE_PAD
     g->pad_started = 0;
     g->pad_buf  = 0;
     g->pad_buf1 = 0;
     g->pad_buf2 = 0;
-#endif
 
-#if HLE_ENABLE_HEAP
     g->heap_addr = 0;
     g->heap_size = 0;
-#endif
     g->kheap_addr = 0;
     g->kheap_size = 0;
 
-#if HLE_ENABLE_MCD
     g->cardState = ~0;
     g->card_active_chan = 0;
-#endif
 
-#if HLE_ENABLE_MCD
     g->nfile = 0;
     memset(g->ffile, 0, sizeof(g->ffile));
     memset(g->FDesc, 0, sizeof(g->FDesc));
-#endif
 
-#if HLE_FULL
-    if (hle_config_env_full()) {
-        is_hle_full_mode = 1;
-        psxFs_CacheFilesystem();
+    psxFs_CacheFilesystem();
 
-        // not sure about these, the HLE seems to skip them which, I expect, is only wise
-        // if we're bypassing BIOS entirely. --jstine
+    // not sure about these, the HLE seems to skip them which, I expect, is only wise
+    // if we're bypassing BIOS entirely. --jstine
 
-        biosA0[0x71] = psxBios__96_init;
-        biosA0[0x72] = psxBios__96_remove;
+    biosA0[0x71] = psxBios__96_init;
+    biosA0[0x72] = psxBios__96_remove;
 
-        // I'm not quite sure what this is about ... it's setting up some values into B0/C0 table, so I assume
-        // it should only be performed when bypassing BIOS entirely --jstine
+    // I'm not quite sure what this is about ... it's setting up some values into B0/C0 table, so I assume
+    // it should only be performed when bypassing BIOS entirely --jstine
 
-        auto* ptr = (u32 *)PSXM(TABLE_B0);
-        StoreToLE(ptr[0], 0x4c54 - 0x884);
+    auto* ptr = (u32 *)PSXM(TABLE_B0);
+    StoreToLE(ptr[0], 0x4c54 - 0x884);
 
-        ptr = (u32 *)PSXM(TABLE_C0);
-        StoreToLE(ptr[6], 0xc80);
+    ptr = (u32 *)PSXM(TABLE_C0);
+    StoreToLE(ptr[6], 0xc80);
 
-        StoreToLE(psxMu32ref(0x0150), 0x160);
-        StoreToLE(psxMu32ref(0x0154), 0x320);
-        StoreToLE(psxMu32ref(0x0160), 0x248);
-        strcpy((char *)PSXM(0x248), "bu");
-    /*	StoreToLE(psxMu32ref(0x0ca8), 0x1f410004);
-        StoreToLE(psxMu32ref(0x0cf0), 0x3c020000);
-        StoreToLE(psxMu32ref(0x0cf4), 0x2442641c);
-        StoreToLE(psxMu32ref(0x09e0), 0x43d0);
-        StoreToLE(psxMu32ref(0x4d98), 0x946f000a);
-    */
-        // opcode HLE
-        (u32&)PSX_ROM_START[0x0000] = LoadFromLE<u32>((0x3b << 26) | 4);
-        /* Whatever this does, it actually breaks CTR, even without the uninitiliazed memory patch.
-        Normally games shouldn't read from address 0 yet they do. See explanation below in details. */
-        //StoreToLE(psxMu32ref(0x0000), (0x3b << 26) | 0);
-        StoreToLE(psxMu32ref(0x00a0), (0x3b << 26) | 1);
-        StoreToLE(psxMu32ref(0x00b0), (0x3b << 26) | 2);
-        StoreToLE(psxMu32ref(0x00c0), (0x3b << 26) | 3);
-        StoreToLE(psxMu32ref(0x4c54), (0x3b << 26) | 0);
-        StoreToLE(psxMu32ref(0x8000), (0x3b << 26) | 5);
-        StoreToLE(psxMu32ref(0x07a0), (0x3b << 26) | 0);
-        StoreToLE(psxMu32ref(0x0884), (0x3b << 26) | 0);
-        StoreToLE(psxMu32ref(0x0894), (0x3b << 26) | 0);
+    StoreToLE(psxMu32ref(0x0150), 0x160);
+    StoreToLE(psxMu32ref(0x0154), 0x320);
+    StoreToLE(psxMu32ref(0x0160), 0x248);
+    strcpy((char *)PSXM(0x248), "bu");
+/*	StoreToLE(psxMu32ref(0x0ca8), 0x1f410004);
+    StoreToLE(psxMu32ref(0x0cf0), 0x3c020000);
+    StoreToLE(psxMu32ref(0x0cf4), 0x2442641c);
+    StoreToLE(psxMu32ref(0x09e0), 0x43d0);
+    StoreToLE(psxMu32ref(0x4d98), 0x946f000a);
+*/
+    // opcode HLE
+    (u32&)PSX_ROM_START[0x0000] = LoadFromLE<u32>((0x3b << 26) | 4);
+    /* Whatever this does, it actually breaks CTR, even without the uninitiliazed memory patch.
+    Normally games shouldn't read from address 0 yet they do. See explanation below in details. */
+    //StoreToLE(psxMu32ref(0x0000), (0x3b << 26) | 0);
+    StoreToLE(psxMu32ref(0x00a0), (0x3b << 26) | 1);
+    StoreToLE(psxMu32ref(0x00b0), (0x3b << 26) | 2);
+    StoreToLE(psxMu32ref(0x00c0), (0x3b << 26) | 3);
+    StoreToLE(psxMu32ref(0x4c54), (0x3b << 26) | 0);
+    StoreToLE(psxMu32ref(0x8000), (0x3b << 26) | 5);
+    StoreToLE(psxMu32ref(0x07a0), (0x3b << 26) | 0);
+    StoreToLE(psxMu32ref(0x0884), (0x3b << 26) | 0);
+    StoreToLE(psxMu32ref(0x0894), (0x3b << 26) | 0);
 
-        // initial stack pointer for BIOS interrupt
-        StoreToLE(psxMu32ref(0x6c80), 0x000085c8);
+    // initial stack pointer for BIOS interrupt
+    StoreToLE(psxMu32ref(0x6c80), 0x000085c8);
 
-        // initial RNG seed
-        StoreToLE(psxMu32ref(0x9010), 0xac20cc00);
+    // initial RNG seed
+    StoreToLE(psxMu32ref(0x9010), 0xac20cc00);
 
 #if HAS_ZLIB
-        // fonts
-        uLongf len;
-        len = 0x80000 - 0x66000;
-        uncompress((Bytef *)(PSX_ROM_START + ROM_FONT_8140), &len, font_8140, sizeof(font_8140));
-        len = 0x80000 - 0x69d68;
-        uncompress((Bytef *)(PSX_ROM_START + ROM_FONT_889F), &len, font_889f, sizeof(font_889f));
+    // fonts
+    uLongf len;
+    len = 0x80000 - 0x66000;
+    uncompress((Bytef *)(PSX_ROM_START + ROM_FONT_8140), &len, font_8140, sizeof(font_8140));
+    len = 0x80000 - 0x69d68;
+    uncompress((Bytef *)(PSX_ROM_START + ROM_FONT_889F), &len, font_889f, sizeof(font_889f));
 #endif
 
-        // memory size 2 MB
-        // (mednafen doesn't seem to bother to set this...)
-        Write_MEMCTRL2(0x00000b88);
+    // memory size 2 MB
+    // (mednafen doesn't seem to bother to set this...)
+    Write_MEMCTRL2(0x00000b88);
 
 
-        /*	Some games like R-Types, CTR, Fade to Black read from adress 0x00000000 due to uninitialized pointers.
-            See Garbage Area at Address 00000000h in Nocash PSX Specfications for more information.
-            Here are some examples of games not working with this fix in place :
-            R-type won't get past the Irem logo if not implemented.
-            Crash Team Racing will softlock after the Sony logo.
-        */
+    /*	Some games like R-Types, CTR, Fade to Black read from adress 0x00000000 due to uninitialized pointers.
+        See Garbage Area at Address 00000000h in Nocash PSX Specfications for more information.
+        Here are some examples of games not working with this fix in place :
+        R-type won't get past the Irem logo if not implemented.
+        Crash Team Racing will softlock after the Sony logo.
+    */
 
-        StoreToLE(psxMu32ref(0x0000),0x00000003);
-        /*
-        But overwritten by 00000003h after soon.
-        StoreToLE(psxMu32ref(0x0000), 0x00001A3C);
-        */
-        StoreToLE(psxMu32ref(0x0004), 0x800C5A27);
-        StoreToLE(psxMu32ref(0x0008), 0x08000403);
-        StoreToLE(psxMu32ref(0x000C), 0x00000000);
+    StoreToLE(psxMu32ref(0x0000),0x00000003);
+    /*
+    But overwritten by 00000003h after soon.
+    StoreToLE(psxMu32ref(0x0000), 0x00001A3C);
+    */
+    StoreToLE(psxMu32ref(0x0004), 0x800C5A27);
+    StoreToLE(psxMu32ref(0x0008), 0x08000403);
+    StoreToLE(psxMu32ref(0x000C), 0x00000000);
 
 
-        // Wonderful hack for Metal Gears Solid
-        // The game query the function pointer of table A0/0x9D (GetConf)
-        // With the opcode they compute the address of the global conf structure
-        // Then manually update the parameters
-        //
-        // We don't care about those values but we care that game doesn't write random
-        // stuff at random address... So let's do black magic
-        //
-        // Redirect 0x9D to a free memory
-        u32 pseudo_getconf = KERNEL_END - 32;
-        StoreToLE(psxMu32ref(TABLE_A0 + 0x9D * 4), pseudo_getconf);
-        // Store 2 dummy opcode that will be used to build an address (KERNEL_HEAP + 4)
-        StoreToLE(psxMu32ref(pseudo_getconf), 0xA001);
-        StoreToLE(psxMu32ref(pseudo_getconf+4), pseudo_getconf + 16);
+    // Wonderful hack for Metal Gears Solid
+    // The game query the function pointer of table A0/0x9D (GetConf)
+    // With the opcode they compute the address of the global conf structure
+    // Then manually update the parameters
+    //
+    // We don't care about those values but we care that game doesn't write random
+    // stuff at random address... So let's do black magic
+    //
+    // Redirect 0x9D to a free memory
+    u32 pseudo_getconf = KERNEL_END - 32;
+    StoreToLE(psxMu32ref(TABLE_A0 + 0x9D * 4), pseudo_getconf);
+    // Store 2 dummy opcode that will be used to build an address (KERNEL_HEAP + 4)
+    StoreToLE(psxMu32ref(pseudo_getconf), 0xA001);
+    StoreToLE(psxMu32ref(pseudo_getconf+4), pseudo_getconf + 16);
 
-        // Another hack for The king of fighter. This one is very funny, they patch
-        // the exception handler with a trampoline to likely fix a bug in the kernel
-        // 3c02a001 lui v0, a001
-        // 2442dfac addiu v0, v0, dfac
-        // 00400008 jr v0
-        // 00000000 nop
-        // 00000000 nop
-        // Meanwhile due to a nullptr they write the GPU DMA linked list into 0x-0x30 range address
-        // Due to nullptr in the C0 vector in HLE, the game patch ends up killing the DMA linked list
-        u32 pseudo_ExceptionHandler = pseudo_getconf - 128;
-        StoreToLE(psxMu32ref(TABLE_C0 + 6 * 4), pseudo_ExceptionHandler);
-        StoreToLE(psxMu32ref(pseudo_ExceptionHandler + 116), pseudo_ExceptionHandler);
+    // Another hack for The king of fighter. This one is very funny, they patch
+    // the exception handler with a trampoline to likely fix a bug in the kernel
+    // 3c02a001 lui v0, a001
+    // 2442dfac addiu v0, v0, dfac
+    // 00400008 jr v0
+    // 00000000 nop
+    // 00000000 nop
+    // Meanwhile due to a nullptr they write the GPU DMA linked list into 0x-0x30 range address
+    // Due to nullptr in the C0 vector in HLE, the game patch ends up killing the DMA linked list
+    u32 pseudo_ExceptionHandler = pseudo_getconf - 128;
+    StoreToLE(psxMu32ref(TABLE_C0 + 6 * 4), pseudo_ExceptionHandler);
+    StoreToLE(psxMu32ref(pseudo_ExceptionHandler + 116), pseudo_ExceptionHandler);
 
-        // Init timer related variable
-        init_timers();
-    }
-#endif
+    // Init timer related variable
+    init_timers();
+
     // Reset GPU stat, in particular enable the display
     GPU_W_STATUS(0x0300'0000);
 
@@ -4104,8 +3982,6 @@ void psxBiosLoadExecCdrom() {
     }
 }
 
-#if HLE_ENABLE_PAD
-
 #if HLE_PCSX_IFC
 void PAD_startPoll(int port) {
     if (port == 0) {
@@ -4149,8 +4025,6 @@ void PAD_startPoll(int port) {
 }
 #endif
 
-#endif
-
 void psxBios_PADpoll(int pad, u8* buf) {
     const u8 hiz = 0xff;
     int bufcount;
@@ -4180,7 +4054,6 @@ void psxBios_PADpoll(int pad, u8* buf) {
 #endif
 }
 
-#if HLE_ENABLE_EXCEPTION
 void biosInterrupt() {
     auto istat = Read_ISTAT() & Read_IMASK();
 
@@ -4192,7 +4065,6 @@ void biosInterrupt() {
         if (g->pad_buf) {
             u32 *buf = (u32*)PSXM(g->pad_buf);
 
-        #if HLE_ENABLE_PAD
             PAD_startPoll(0);
             if (PAD_poll(0, 0x42) == 0x23) {
                 PAD_poll(0, 0);
@@ -4220,11 +4092,9 @@ void biosInterrupt() {
                 *buf |= PAD_poll(1, 0) << 24;
                 *buf |= PAD_poll(1, 0) << 16;
             }
-        #endif
         }
 
         if (g->pad_started)  {
-    #if HLE_ENABLE_PAD
             if (g->pad_buf1) {
                 psxBios_PADpoll(0, PSXM(g->pad_buf1));
             }
@@ -4232,7 +4102,6 @@ void biosInterrupt() {
             if (g->pad_buf2) {
                 psxBios_PADpoll(1, PSXM(g->pad_buf2));
             }
-    #endif
         }
 //	}
 
@@ -4379,7 +4248,6 @@ void psxBiosException80() {
 
     CP0_RFE();
 }
-#endif
 
 bool psxbios_invoke_any(u32 callTableId, const HLE_BIOS_TABLE& table, const char * const names[256]) {
     int call = t1 & 0xff;
@@ -4420,9 +4288,8 @@ bool psxbios_invoke_any(u32 callTableId, const HLE_BIOS_TABLE& table, const char
         }
     }
 
-    if (is_hle_full_mode) {
-        dbg_abort();
-    }
+    dbg_abort();
+
     return 0;
 }
 
@@ -4473,9 +4340,7 @@ extern "C" int HleDispatchCall(uint32_t pc) {
             break;
     }
 
-    if (is_hle_full_mode) {
-        dbg_check (masked_pc >= 0x10000);
-    }
+    dbg_check (masked_pc >= 0x10000);
 
     return 0;
 }
