@@ -496,12 +496,7 @@ uint8_t hleSoftCall = 0;
 #define HLE_BIOS_INVOKE_ARGS huid
 #define HLE_BIOS_DUMMY_ARGS 0
 
-// FIXME merge softCall and softCall2.
 static inline void softCall(u32 pc) {
-    HleExecuteRecursive(pc, kSoftCallBaseRetAddr);
-}
-
-static inline void softCall2(u32 pc) {
     u32 sra = ra;
     HleExecuteRecursive(pc, kSoftCallBaseRetAddr);
     ra = sra;
@@ -544,7 +539,7 @@ static inline void DeliverEvent(u32 ev, u32 spec) {
     for (u32 i = 0; i < EVCB_MAX; i++) {
         if (evcb[i].status == EVENT_STATUS::ENABLED && evcb[i].ev == ev && evcb[i].spec == spec) {
             if (evcb[i].mode == EVENT_MODE::CALLBACK)
-                softCall2(evcb[i].fhandler);
+                softCall(evcb[i].fhandler);
             else
                 evcb[i].status = EVENT_STATUS::DELIVERED;
         }
@@ -1103,7 +1098,7 @@ static inline int qscmp(char *a, char *b) {
     a0 = sa0 + (a - (char *)PSXM(sa0));
     a1 = sa0 + (b - (char *)PSXM(sa0));
 
-    softCall2(qscmpfunc);
+    softCall(qscmpfunc);
 
     a0 = sa0;
     return (s32)v0;
@@ -4240,9 +4235,6 @@ void biosInterrupt() {
     #endif
         }
 //	}
-
-    // Note: DeliverEvent will use softCall2, old code was softcall. But it should work as exception return shall
-    // restore the ra register at the end
 
     // VSYNC and Rcnt 0,1,2 shall be run at priority 1 (actually syscall c0/0x0 set the priority)
 
