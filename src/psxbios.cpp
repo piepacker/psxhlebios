@@ -2311,6 +2311,8 @@ void psxBios_ChangeTh(HLE_BIOS_CALL_ARGS) { // 10
 void psxBios_InitPAD(HLE_BIOS_CALL_ARGS) { // 0x12
     PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x12]);
 
+    g->pad_buf = 0; // Fix bushido blade 2
+
     g->pad_buf1 = a0;
     // a1 contains size of pad_buf1
     g->pad_buf2 = a2;
