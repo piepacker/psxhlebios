@@ -4138,6 +4138,17 @@ void psxBiosException180() {
 }
 
 void psxBiosException80() {
+    // Special handling for COP2 instruction
+    //
+    // During exception code flow is halted however if current instruction is a
+    // COP2 instruction then it is executed.
+    // Opcode check (COP2 but not [cm][tf]cn) is based on Swanstation
+    u32 opcode = LoadFromLE(psxMu32(CP0_EPC));
+    if ((opcode >> 26 == 18) && (opcode & (1u << 25))) {
+        // Note in theory only the return address in the TCB shall be updated not the
+        // CPU register. It is equivalent from an hle point of view.
+        CP0_EPC = CP0_EPC + 4;
+    }
 
     static const char* const exmne[16] =
     {
