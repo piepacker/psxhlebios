@@ -3683,6 +3683,10 @@ void psxBiosInitFull() {
 
     psxFs_CacheFilesystem();
 
+    // Set a magic value in the exception vector to detect if the savestate is from this
+    // HLE bios or something else
+    strcpy((char *)PSXM(0x0080), "HLE");
+
     // not sure about these, the HLE seems to skip them which, I expect, is only wise
     // if we're bypassing BIOS entirely. --jstine
 
