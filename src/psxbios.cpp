@@ -417,7 +417,6 @@ typedef struct {
     char name[32];
     u32  mode;
     u32  offset;
-    u32  size;
     u32  mcfile;
 } FileDesc;
 
@@ -442,8 +441,6 @@ struct HleState {
     u32  nfile;
     char ffile[64];
     FileDesc FDesc[32];
-    // Exception/IRQ
-    u32 regs[36]; // 32 GPR + lo + hi + pc + npc (duck)
     // Misc
     u32 initial_sp;
 };
@@ -3353,6 +3350,7 @@ static void initHandlers(u32 kernel_handler) {
 
 void psxBiosInitKernelDataStructure() {
     // By pure lazyness, reuse the hle allocator
+    u32 old_pc = pc0;
 
     // Allocating those data structure in ram provide 2 advantages
     // They are compatible with game that read/write into them
@@ -3384,6 +3382,8 @@ void psxBiosInitKernelDataStructure() {
     initProcessAndThread(kernel_pcb, kernel_tcb);
     initEvents(kernel_evcb);
     initHandlers(kernel_handler);
+
+    pc0 = old_pc;
 }
 
 void psxBiosInit_Lib() {
@@ -4360,4 +4360,108 @@ extern "C" int HleDispatchCall(uint32_t pc) {
     dbg_check (masked_pc >= 0x10000);
 
     return 0;
+}
+
+void HleHookAfterLoadState(const char* game_code) {
+    // State is already HLE-compliant
+    if (strncmp((char*)PSXM(0x80), "HLE", 3) == 0)
+        return;
+
+    // Big trouble, we need to convert current ram to an HLE state
+
+    // Step1 backup ram
+    std::array<u8, 65536> ram;
+    memcpy(ram.data(), PSX_RAM_START, ram.size());
+    // Step2 wipeout ram/rom
+    memset(PSX_RAM_START, 0, ram.size());
+    memset(PSX_ROM_START, 0, 512 * 1024);
+    // Step3 init the HLE bios
+    psxBiosInitFull();
+    // Step4 copy back datastructure
+    auto* ram_hle = (u32*)PSX_RAM_START;
+    auto* ram_old = (u32*)ram.data();
+    auto copy_ram = [&](u32 to, u32 from, u32 size) {
+        to &= USEG_MASK;
+        from &= USEG_MASK;
+        memcpy((u8*)ram_hle + to, (u8*)ram_old + from, size);
+    };
+    auto copy_data_struct = [&](u32 data) {
+        u32 array_ptr = LoadFromLE(psxMu32ref(data));
+        u32 array_size = LoadFromLE(psxMu32ref(data + 4));
+        copy_ram(array_ptr, array_ptr, array_size);
+    };
+    // Initial global structure
+    copy_ram(G_HANDLERS, G_HANDLERS, G_EVENTS_SIZE - G_HANDLERS);
+    copy_data_struct(G_HANDLERS);
+    copy_data_struct(G_PROCESS);
+    copy_data_struct(G_THREADS);
+    copy_data_struct(G_EVENTS);
+
+    // Step5 convert the files data structure from non-HLE to HLE
+
+    // Step6 set hle variable based.
+
+    // Black magic to get heap_size and heap_addr
+    // Query the function pointer
+    u32 init_heap = LoadFromLE(ram_old[(TABLE_A0 + 4 * 0x39)/4]);
+    bool store_size = false;
+    if (init_heap < 0xFFFF) {
+        // The start of openbios init heap function is
+        // user_heap_start = base;
+        // user_heap_end = ((char *)base) + size;
+        for (u32 a = init_heap; a < (init_heap + 64); a+=4) {
+            u32 opcode = LoadFromLE(ram_old[a/4]);
+            // Search sw instruction
+            if ((opcode >> 26) == 43) {
+                opcode &= 0xFFFF;
+                if (store_size) {
+                    // Second 'sw' is heap_end
+                    u32 heap_end = LoadFromLE(ram_old[opcode / 4]);
+                    g->heap_size = heap_end - g->heap_addr;
+                    break;
+                } else {
+                    // First 'sw' is heap_start
+                    g->heap_addr = LoadFromLE(ram_old[opcode / 4]);
+                    store_size = true;
+                }
+            }
+        }
+    } else {
+        // Code located in rom. Not open bios case
+    }
+
+    // Black magic to get jmp_int (it can also be hardcoded in the game switch case below)
+    //
+    // Get the exception handler address
+    u32 exception_handler = LoadFromLE(ram_old[0x80/4]) & 0xFFFF;
+    // Code is from ASM, I don't expect too much variation, can fast forward a bit
+    exception_handler += 400;
+    for (u32 a = exception_handler; a < (exception_handler + 100); a+=4) {
+        u32 opcode = LoadFromLE(ram_old[a/4]);
+        // Search addiu $a0, %lo(g_exceptionJmpBufPtr)
+        if ((opcode & 0xFFFF'0000) == 0x2484'0000) {
+            opcode &= 0xFFFF;
+            g->jmp_int = LoadFromLE(ram_old[opcode / 4]);
+            break;
+        }
+    }
+
+    // Default card/pad setup
+    g->cardState = 0x1;
+    g->pad_started = 0x0;
+    g->pad_buf = 0x0;
+    g->pad_buf1 = 0x0;
+    g->pad_buf2 = 0x0;
+
+    // Various variables are set only once when the game boot
+    // The easiest solution is to hardcode them based on the game id. It
+    // doesn't scale but it avoid to dig in the ram to find those values
+    if (!strncmp(game_code, "SLUS-00890", 16)) { // glover
+        // g->jmp_int = 0x800b47dc; // Optional, see generic code above
+    } else if (!strncmp(game_code, "SLES-03804", 16)) { // worms
+        // g->jmp_int = 0x8002003c; // Optional, see generic code above
+    }
+
+    // Step7 clear all emulators caches, we just updated all the kernel ram
+    ClearAllCaches();
 }

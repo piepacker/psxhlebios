@@ -46,6 +46,7 @@ void psxBiosFreeze(int Mode);
 void psxBiosInitKernelDataStructure();
 
 int HleDispatchCall(uint32_t pc);
+void HleHookAfterLoadState(const char* game_code);
 
 extern uint8_t hleSoftCall;
 
