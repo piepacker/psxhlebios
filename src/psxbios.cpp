@@ -4447,19 +4447,31 @@ void HleHookAfterLoadState(const char* game_code) {
     }
 
     // Default card/pad setup
-    g->cardState = 0x1;
-    g->pad_started = 0x0;
-    g->pad_buf = 0x0;
-    g->pad_buf1 = 0x0;
-    g->pad_buf2 = 0x0;
+    g->cardState = 1;
+    g->pad_started = 0;
+    g->pad_buf = 0;
+    g->pad_buf1 = 0;
+    g->pad_buf2 = 0;
 
     // Various variables are set only once when the game boot
     // The easiest solution is to hardcode them based on the game id. It
     // doesn't scale but it avoid to dig in the ram to find those values
-    if (!strncmp(game_code, "SLUS-00890", 16)) { // glover
-        // g->jmp_int = 0x800b47dc; // Optional, see generic code above
-    } else if (!strncmp(game_code, "SLES-03804", 16)) { // worms
-        // g->jmp_int = 0x8002003c; // Optional, see generic code above
+    if (!strncmp(game_code, "SLES-00558", 16)) { // descent
+        g->pad_started = 1;
+        g->pad_buf1 = 0x800eb004;
+        g->pad_buf2 = 0x800eb026;
+    } else if (!strncmp(game_code, "SLES-00730", 16)) { // legend
+        g->pad_started = 1;
+        g->pad_buf1 = 0x80071634;
+        g->pad_buf2 = 0x8007163c;
+    } else if (!strncmp(game_code, "SLUS-00076", 16)) { // loaded
+        g->pad_started = 1;
+        g->pad_buf1 = 0x8004fe60;
+        g->pad_buf2 = 0x8004fe84;
+    } else if (!strncmp(game_code, "SLES-00455", 16)) { // X2
+        g->pad_started = 1;
+        g->pad_buf1 = 0x801e928c;
+        g->pad_buf2 = 0x801e92b4;
     }
 
     // Step7 clear all emulators caches, we just updated all the kernel ram
