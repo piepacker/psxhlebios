@@ -1867,7 +1867,9 @@ void psxBios__card_info(HLE_BIOS_CALL_ARGS) { // ab
     if (!VmcEnabled(0) && !VmcEnabled(1))
         ret = 0x8;
 
-    DeliverEvent(0xf0000011, 0x0004);
+    // Game (Future cops LAPD) calls card_info from the handler of the event
+    // 0xf0000011/0x4 so I doubt that event must be generated here
+    //DeliverEvent(0xf0000011, 0x0004);
     DeliverEvent(0xf4000001, 1 << ret);
 
     v0 = 1; pc0 = ra;
