@@ -2868,12 +2868,16 @@ void psxBios_delete(HLE_BIOS_CALL_ARGS) { // 45
     v0 = 0;
 
     if (pa0) {
+        // Game (Azure Dreams)
+        // delete() calls _card_read() internally, so deliver it's event
         if (!strncmp(pa0, "bu00", 4)) {
             budelete(1);
+            DeliverEvent(0xf0000011, 0x0004);
         }
 
         if (!strncmp(pa0, "bu10", 4)) {
             budelete(2);
+            DeliverEvent(0xf0000011, 0x0004);
         }
     }
 
