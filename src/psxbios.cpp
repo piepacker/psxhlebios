@@ -3057,7 +3057,7 @@ void psxBios__card_chan(HLE_BIOS_CALL_ARGS) { // 0x58
 void psxBios__card_status(HLE_BIOS_CALL_ARGS) { // 5c
     PSXBIOS_LOG("psxBios_%s: %x\n", biosB0n[0x5c], a0);
 
-    v0 = g->card_active_chan;
+    v0 = 1;
     pc0 = ra;
 }
 
