@@ -366,6 +366,15 @@ enum class EVENT_MODE : uint32_t {
     NO_CALLBACK = 0x2000,
 };
 
+const uint32_t EVENT_CLASS_CARD_HW   = 0xf000'0011;
+const uint32_t EVENT_CLASS_CARD_BIOS = 0xf400'0001;
+const uint32_t EVENT_CLASS_TIMER     = 0xf200'0000;
+const uint32_t EVENT_CLASS_EXCEPTION = 0xf000'0010;
+
+const uint32_t EVENT_SPEC_INTERRUPT = 0x0002;
+const uint32_t EVENT_SPEC_END_IO    = 0x0004;
+const uint32_t EVENT_SPEC_SYSCALL   = 0x4000;
+
 /*
 typedef struct {
     s32 next;
@@ -1774,12 +1783,12 @@ void psxBios__bu_init(HLE_BIOS_CALL_ARGS) { // 70
     //   handle for us via its own MIPS state machine. --jstine
 
     int baseState = SCRI_psxBios__bu_init_00;
-    DeliverEvent(baseState++, 0xf0000011, 0x0004);
-    DeliverEvent(baseState++, 0xf4000001, 0x0004);
+    DeliverEvent(baseState++, EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
+    DeliverEvent(baseState++, EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO);
 
 #else
-    DeliverEvent(0xf0000011, 0x0004);
-    DeliverEvent(0xf4000001, 0x0004);
+    DeliverEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
+    DeliverEvent(EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO);
 
     pc0 = ra;
 #endif
@@ -1868,9 +1877,9 @@ void psxBios__card_info(HLE_BIOS_CALL_ARGS) { // ab
         ret = 0x8;
 
     // Game (Future cops LAPD) calls card_info from the handler of the event
-    // 0xf0000011/0x4 so I doubt that event must be generated here
-    //DeliverEvent(0xf0000011, 0x0004);
-    DeliverEvent(0xf4000001, 1 << ret);
+    // EVENT_CLASS_CARD_HW/0x4 so I doubt that event must be generated here
+    //DeliverEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
+    DeliverEvent(EVENT_CLASS_CARD_BIOS, 1 << ret);
 
     v0 = 1; pc0 = ra;
 }
@@ -1880,7 +1889,7 @@ void psxBios__card_load(HLE_BIOS_CALL_ARGS) { // ac
 
     g->card_active_chan = a0;
 
-    DeliverEvent(0xf4000001, 0x0004);
+    DeliverEvent(EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO);
 
     v0 = 1; pc0 = ra;
 }
@@ -2421,8 +2430,8 @@ void buread(void* ra1, int mcd, int length) {
     memcpy(ra1, ptr, length);
 
     if (fd.mode & 0x8000) {
-        DeliverEvent(0xf0000011, 0x0004);
-        DeliverEvent(0xf4000001, 0x0004);
+        DeliverEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
+        DeliverEvent(EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO);
         v0 = 0;
     }
     else
@@ -2441,8 +2450,8 @@ void buwrite(void* ra1, int mcd, int length) {
     g->FDesc[1 + mcd].offset += length;
 
     if (g->FDesc[1 + mcd].mode & 0x8000) {
-        DeliverEvent(0xf0000011, 0x0004);
-        DeliverEvent(0xf4000001, 0x0004);
+        DeliverEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
+        DeliverEvent(EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO);
         v0 = 0;
     }
     else
@@ -2606,8 +2615,8 @@ void psxBios_lseek(HLE_BIOS_CALL_ARGS) { // 0x33
         case 0: // SEEK_SET
             g->FDesc[a0].offset = a1;
             v0 = a1;
-//			DeliverEvent(0x11, 0x2); // 0xf0000011, 0x0004
-//			DeliverEvent(0x81, 0x2); // 0xf4000001, 0x0004
+//			DeliverEvent(0x11, 0x2); // EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO
+//			DeliverEvent(0x81, 0x2); // EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO
             break;
 
         case 1: // SEEK_CUR
@@ -2753,11 +2762,11 @@ void psxBios_firstfile(HLE_BIOS_CALL_ARGS) { // 42
         g->nfile = 0;
         if (!strncmp(pa0, "bu00", 4)) {
             // firstfile() calls _card_read() internally, so deliver it's event
-            DeliverEvent(0xf0000011, 0x0004);
+            DeliverEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
             bufile(1, a1);
         } else if (!strncmp(pa0, "bu10", 4)) {
             // firstfile() calls _card_read() internally, so deliver it's event
-            DeliverEvent(0xf0000011, 0x0004);
+            DeliverEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
             bufile(2, a1);
         }
     }
@@ -2874,12 +2883,12 @@ void psxBios_delete(HLE_BIOS_CALL_ARGS) { // 45
         // delete() calls _card_read() internally, so deliver it's event
         if (!strncmp(pa0, "bu00", 4)) {
             budelete(1);
-            DeliverEvent(0xf0000011, 0x0004);
+            DeliverEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
         }
 
         if (!strncmp(pa0, "bu10", 4)) {
             budelete(2);
-            DeliverEvent(0xf0000011, 0x0004);
+            DeliverEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
         }
     }
 
@@ -2946,8 +2955,8 @@ void psxBios__card_write(HLE_BIOS_CALL_ARGS) { // 0x4e
         VmcWriteNV(port, a1 * 128, pa2, 128);
     }
 
-    DeliverEvent(0xf0000011, 0x0004);
-//	DeliverEvent(0x81, 0x2); // 0xf4000001, 0x0004
+    DeliverEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
+//	DeliverEvent(0x81, 0x2); // EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO
 
     v0 = 1; pc0 = ra;
 }
@@ -2977,8 +2986,8 @@ void psxBios__card_read(HLE_BIOS_CALL_ARGS) { // 0x4f
             memcpy(pa2, mcdraw + a1 * 128, 128);
     }
 
-    DeliverEvent(0xf0000011, 0x0004);
-//	DeliverEvent(0x81, 0x2); // 0xf4000001, 0x0004
+    DeliverEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
+//	DeliverEvent(0x81, 0x2); // EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO
 
     v0 = 1; pc0 = ra;
 }
@@ -4120,7 +4129,7 @@ void biosInterrupt() {
     // VSYNC and Rcnt 0,1,2 shall be run at priority 1 (actually syscall c0/0x0 set the priority)
 
     if (istat & 0x1) { // Vsync
-        DeliverEvent(0xF200'0000 + 3, 2);
+        DeliverEvent(EVENT_CLASS_TIMER + 3, EVENT_SPEC_INTERRUPT);
 #if 0
 //		hwWrite32(0x1f801070, ~(1));
         auto auto_ack = LoadFromLE(psxMu32ref(TIMER_IRQ_AUTO_ACK + (3 <<2)));
@@ -4131,7 +4140,7 @@ void biosInterrupt() {
 
     for (int i = 0; i < 3; i++) { // Rcnt 0,1,2
         if (istat & (1 << (i + 4))) {
-            DeliverEvent(0xF200'0000 + i, 2);
+            DeliverEvent(EVENT_CLASS_TIMER + i, EVENT_SPEC_INTERRUPT);
             //PSXBIOS_LOG("Clear ISTAT for RCNT %d\n", i);
             auto auto_ack = LoadFromLE(psxMu32ref(TIMER_IRQ_AUTO_ACK + (i <<2)));
             if (auto_ack)
@@ -4243,7 +4252,7 @@ void psxBiosException80() {
                     // Jumping flash, sigh...
                     // DeliverEvent might fiddle with the TCB content, so you need to save and restore registers
                     saveContextException();
-                    DeliverEvent(0xf000'0010, 0x4000);
+                    DeliverEvent(EVENT_CLASS_EXCEPTION, EVENT_SPEC_SYSCALL);
                     restoreContextException();
                     break;
             }
