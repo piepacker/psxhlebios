@@ -1603,8 +1603,8 @@ void psxBios_Load(HLE_BIOS_CALL_ARGS) { // 0x42
     if (auto sector = psxFs_GetFileSector(Ra0)) {
         uint8_t buf[2048];
         psxFs_ReadSectorData2048(buf, sector);
-        memcpy(Ra0, buf, 76);
-        EXEC_DESCRIPTOR tdesc = *(EXEC_DESCRIPTOR*)(Ra0 + sizeof(PSX_EXE_HEADER));
+
+        EXEC_DESCRIPTOR tdesc = *(EXEC_DESCRIPTOR*)(buf + sizeof(PSX_EXE_HEADER));
 
         if (auto* pa1 = (EXEC_DESCRIPTOR*)Ra1) {
             *pa1 = tdesc;
