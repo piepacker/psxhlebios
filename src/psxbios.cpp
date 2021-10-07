@@ -4450,8 +4450,12 @@ void HleHookAfterLoadState(const char* game_code) {
     // Black magic to get jmp_int (it can also be hardcoded in the game switch case below)
     //
     // Get the exception handler address
-    u32 exception_handler = LoadFromLE(ram_old[0x80/4]) & 0xFFFF;
-    // Code is from ASM, I don't expect too much variation, can fast forward a bit
+    u32 opcode_0x80 = LoadFromLE(ram_old[0x80/4]);
+    // Check opcode is addiu k0, zero, address
+    rel_check((opcode_0x80 >> 16) == 0x241a, "Invalid BIOS RAM data");
+    u32 exception_handler = opcode_0x80 & 0xFFFF;
+
+    // Code is from ASM, I don't expect too much variation, let's fast forward a bit
     exception_handler += 400;
     for (u32 a = exception_handler; a < (exception_handler + 100); a+=4) {
         u32 opcode = LoadFromLE(ram_old[a/4]);
