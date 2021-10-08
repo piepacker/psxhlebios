@@ -117,7 +117,7 @@ void StoreToBE(T& dest, const T& src) {
 }
 
 // Keep trace of the event status to only print change
-static u8 s_debug_ev[256*256];
+static std::array<u8, 256> s_debug_ev;
 static u8 s_print_waitevent_log = true;
 
 static bool s_suppress_spam = 0;
@@ -2034,7 +2034,7 @@ void psxBios_OpenEvent(HLE_BIOS_CALL_ARGS) { // 08
         return;
     } else {
         auto evcb = GetEVCB();
-        evcb[slot].status = EVENT_STATUS::DISABLED;
+        evcb[slot].status = EVENT_STATUS::DISABLED; //  Don't use setOpenEventStatus to set status
         evcb[slot].ev = a0;
         evcb[slot].spec = a1;
         evcb[slot].mode = (EVENT_MODE)a2;
@@ -2047,28 +2047,52 @@ void psxBios_OpenEvent(HLE_BIOS_CALL_ARGS) { // 08
     SysPrintf("\t\t\tslot => %x\n", v0);
 }
 
-void setEventStatus(u32 slot, EVENT_STATUS status) {
+bool isValidSlot(u32 slot) {
+    slot &= 0xFFFF;
+    u32 evcb_max = LoadFromLE(psxMu32ref(G_EVENTS_SIZE)) / SIZEOF_EVCB;
+    if (slot >= evcb_max) {
+        // Game is buggy and depends on an "undefined" behavior
+        // In order to behave like the original bios, we will need to have the same
+        // start address for the EVCB...
+        SysPrintf("\t\t\t=> invalid slot (%x)\n", slot);
+        return false;
+    }
+
+    return true;
+}
+
+void setOpenEventStatus(u32 slot, EVENT_STATUS status) {
+    if (!isValidSlot(slot)) {
+        return;
+    }
+
     slot &= 0xFFFF;
     auto evcb = GetEVCB();
-    evcb[slot].status = status;
+    if (evcb[slot].status != EVENT_STATUS::FREE)
+        evcb[slot].status = status;
 }
 
 void psxBios_CloseEvent(HLE_BIOS_CALL_ARGS) { // 09
     PSXBIOS_LOG("psxBios_%s %x\n", biosB0n[0x09], a0);
 
-    setEventStatus(a0, EVENT_STATUS::FREE);
+    setOpenEventStatus(a0, EVENT_STATUS::FREE);
 
     v0 = 1;
     pc0 = ra;
 }
 
 void psxBios_WaitEvent(HLE_BIOS_CALL_ARGS) { // 0a
-    auto evcb = GetEVCB();
     uint32_t slot = a0 & 0xFFFF;
+    if (!isValidSlot(slot)) {
+        v0 = 0;
+        pc0 = ra;
+        return;
+    }
 
     if (s_print_waitevent_log)
         PSXBIOS_LOG("psxBios_%s %x\n", biosB0n[0x0a], slot);
 
+    auto evcb = GetEVCB();
     switch (evcb[slot].status) {
         case EVENT_STATUS::DELIVERED:
             // Event was delivered. Return valid and get back to enabled state
@@ -2106,6 +2130,12 @@ void psxBios_WaitEvent(HLE_BIOS_CALL_ARGS) { // 0a
 
 void psxBios_TestEvent(HLE_BIOS_CALL_ARGS) { // 0b
     auto slot = a0 & 0xFFFF;
+    if (!isValidSlot(slot)) {
+        v0 = 0;
+        pc0 = ra;
+        return;
+    }
+
     auto evcb = GetEVCB();
     if (evcb[slot].status == EVENT_STATUS::DELIVERED) {
         if (evcb[slot].mode == EVENT_MODE::NO_CALLBACK) {
@@ -2119,7 +2149,7 @@ void psxBios_TestEvent(HLE_BIOS_CALL_ARGS) { // 0b
 
     // Print only TestEvent change. The spamy part is the polling of the result
     //PSXBIOS_LOG_SPAM("TestEvent", "psxBios_%s %x,%x: result=%x\n", biosB0n[0x0b], ev, spec, v0);
-    if (s_debug_ev[slot] != v0) {
+    if (slot < s_debug_ev.size() && s_debug_ev[slot] != v0) {
         s_debug_ev[slot] = v0;
         PSXBIOS_LOG("psxBios_%s %x: result=%x\n", biosB0n[0x0b], slot, v0);
     }
@@ -2128,7 +2158,7 @@ void psxBios_TestEvent(HLE_BIOS_CALL_ARGS) { // 0b
 void psxBios_EnableEvent(HLE_BIOS_CALL_ARGS) { // 0c
     PSXBIOS_LOG("psxBios_%s %x\n", biosB0n[0x0c], a0);
 
-    setEventStatus(a0, EVENT_STATUS::ENABLED);
+    setOpenEventStatus(a0, EVENT_STATUS::ENABLED);
 
     v0 = 1;
     pc0 = ra;
@@ -2137,7 +2167,7 @@ void psxBios_EnableEvent(HLE_BIOS_CALL_ARGS) { // 0c
 void psxBios_DisableEvent(HLE_BIOS_CALL_ARGS) { // 0d
     PSXBIOS_LOG("psxBios_%s %x\n", biosB0n[0x0d], a0);
 
-    setEventStatus(a0, EVENT_STATUS::DISABLED);
+    setOpenEventStatus(a0, EVENT_STATUS::DISABLED);
 
     v0 = 1;
     pc0 = ra;
@@ -3815,7 +3845,7 @@ void psxBiosInitFull() {
     GPU_W_STATUS(0x0300'0000);
 
     // Init value can be anything but 0/1
-    memset(s_debug_ev, 0xFF, sizeof(s_debug_ev));
+    s_debug_ev.fill(0xFF);
 }
 
 void psxBiosShutdown() {
