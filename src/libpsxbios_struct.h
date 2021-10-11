@@ -100,3 +100,29 @@ typedef struct {
     uint32_t  mcfile;
 } FileDesc;
 
+struct HleState {
+    uint32_t version;
+    // Entry point
+    uint32_t jmp_int; // PSX address
+    // Pad
+    uint32_t pad_started;
+    uint32_t pad_buf;  // PSX address
+    uint32_t pad_buf1; // PSX address
+    uint32_t pad_buf2; // PSX address
+    // Memory Card
+    uint32_t cardState;
+    uint32_t card_active_chan;
+    // Heap
+    uint32_t heap_size;
+    uint32_t heap_addr; // PSX address
+    uint32_t kheap_size;
+    uint32_t kheap_addr; // PSX address
+    // File
+    uint32_t  nfile;
+    char ffile[64];
+    FileDesc FDesc[32];
+    // Misc
+    uint32_t initial_sp;
+};
+
+extern HleState* g_hle;
