@@ -3104,6 +3104,9 @@ void psxBiosInitFull() {
     memset(g_hle->ffile, 0, sizeof(g_hle->ffile));
     memset(g_hle->FDesc, 0, sizeof(g_hle->FDesc));
 
+    g_hle->async_event_nb = 0;
+    memset(g_hle->async_events, 0, sizeof(g_hle->async_events));
+
     psxFs_CacheFilesystem();
 
     // Set a magic value in the exception vector to detect if the savestate is from this
@@ -3360,7 +3363,7 @@ void psxBiosLoadExecCdrom() {
 
     if (auto sector = psxFs_GetFileSector(first_nonslash(post_colon_ptr))) {
         uint8_t buf[2048];
-        const char id[] = "PS-X EXE";
+        //const char id[] = "PS-X EXE";
 
         psxFs_ReadSectorData2048(buf, sector);
         EXEC_DESCRIPTOR tdesc = *(EXEC_DESCRIPTOR*)(buf + sizeof(PSX_EXE_HEADER));
@@ -3543,6 +3546,8 @@ void psxBiosException80() {
             saveContextException();
 
             // Safest place to deliver event. Register context is saved, IRQ are disabled
+            // Note: by contruction async event can only be delivered unpon interruption of
+            // the main thread otherwise it is synchronous.
             DeliverAsyncEvent();
 
             sp = psxMu32(0x6c80); // create new stack for interrupt handlers

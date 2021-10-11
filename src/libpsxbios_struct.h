@@ -100,6 +100,11 @@ typedef struct {
     uint32_t  mcfile;
 } FileDesc;
 
+struct AsyncEventInfo {
+    uint32_t ev;
+    uint32_t spec;
+};
+
 struct HleState {
     uint32_t version;
     // Entry point
@@ -123,6 +128,9 @@ struct HleState {
     FileDesc FDesc[32];
     // Misc
     uint32_t initial_sp;
+    // Async event handling
+    uint32_t async_event_nb;
+    AsyncEventInfo async_events[64];
 };
 
 extern HleState* g_hle;
