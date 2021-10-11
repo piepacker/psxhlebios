@@ -3,6 +3,9 @@
 #include <stdint.h>
 #include "libpsxbios_struct.h"
 
+#undef SysPrintf
+#define SysPrintf(fmt, ...) (printf(fmt, ##__VA_ARGS__), fflush(stdout))
+
 extern const char * const biosA0n[256];
 extern const char * const biosB0n[256];
 extern const char * const biosC0n[256];

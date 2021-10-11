@@ -1,3 +1,4 @@
+#include "psxhle-emu-ifc.h"
 
 #if HLE_PCSX_IFC
 void VmcReadNV(int port, int slot, void* dest, int offset, int size) {

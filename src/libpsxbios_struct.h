@@ -27,6 +27,12 @@ const uint32_t TABLE_C0        = 0x0674; // vector for call c0
 const uint32_t TIMER_IRQ_AUTO_ACK = 0x8600;
 // End of Magic value
 
+// Default value of internal structure size
+extern uint32_t PCB_MAX;
+extern uint32_t TCB_MAX;
+extern uint32_t HANDLER_MAX;
+extern uint32_t EVCB_MAX;
+
 // Event related info
 enum class EVENT_STATUS : uint32_t {
     FREE       = 0x0000,

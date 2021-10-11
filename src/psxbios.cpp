@@ -56,7 +56,6 @@
 
 extern int big_dump;
 
-const u32 USEG_MASK   = 0x1FFF'FFFF;
 const u32 KSEG        = 0x8000'0000;
 
 // Default value of internal structure size
@@ -75,33 +74,12 @@ const u32 ROM_HLE_STATE     = 0x01000;
 const u32 ROM_FONT_8140     = 0x66000;
 const u32 ROM_FONT_889F     = 0x69d68;
 
-template<typename T, typename T2>
-void StoreToLE(T& dest, const T2& src) {
-    static_assert(std::is_fundamental<T>::value && std::is_fundamental<T2>::value);
-    static_assert(sizeof(T) == sizeof(T2));
-    dest = LoadFromLE((T)src);
-}
-
-template<typename T, typename T2>
-void StoreToBE(T& dest, const T& src) {
-    static_assert(std::is_fundamental<T>::value && std::is_fundamental<T2>::value);
-    static_assert(sizeof(T) == sizeof(T2));
-    dest = LoadFromBE((T)src);
-}
-
-// Keep trace of the event status to only print change
-static std::array<u8, 256> s_debug_ev;
-static u8 s_print_waitevent_log = true;
-
 static bool s_suppress_spam = 0;
 static std::map<std::string, int> s_repeat_supress;
 
 static bool is_suppressed(const char* check) {
     return s_suppress_spam && (++s_repeat_supress[check] > 2);
 };
-
-#undef SysPrintf
-#define SysPrintf(fmt, ...) (printf(fmt, ##__VA_ARGS__), fflush(stdout))
 
 struct HleState {
     u32 version;
@@ -1120,7 +1098,7 @@ _start:
             if (j > t2len-2) {
                 tmp2[j] = 0;
                 //raw_puts(tmp2);
-                fprintf(stderr, "Funky printf formatting at 0x%06x, msg=%s\n", a0 & USEG_MASK, fmt);
+                fprintf(stderr, "Funky printf formatting at 0x%06x, msg=%s\n", a0 & PS1_SegmentAddrMask, fmt);
                 continue;   // resume processing.
             }
 
@@ -1171,7 +1149,7 @@ _start:
                 break;
 
                 case '%':
-                    fprintf(stderr, "Funky printf formatting at 0x%06x, msg=%s\n", a0 & USEG_MASK, fmt);
+                    fprintf(stderr, "Funky printf formatting at 0x%06x, msg=%s\n", a0 & PS1_SegmentAddrMask, fmt);
                 break;
             }
             i++;
@@ -1577,7 +1555,7 @@ void psxBios_SysMalloc(HLE_BIOS_CALL_ARGS) { // 00
     rel_check(g->kheap_size > a0);
     uint32_t aligned_size = (a0 + 3) & ~0x3;
 
-    v0 = g->kheap_addr | KSEG;
+    v0 = g->kheap_addr | PS1_KernelSegment;
     g->kheap_addr += aligned_size;
     g->kheap_size -= aligned_size;
 
@@ -1854,7 +1832,7 @@ static void saveContextR3K(u32* context) {
 }
 
 static void saveContextChangeThread(u32 tcb) {
-    auto context = (u32*)PSXM(tcb & USEG_MASK);
+    auto context = (u32*)PSXM(tcb & PS1_SegmentAddrMask);
     saveContextR3K(context);
 
     StoreToLE(context[TCB_PC_IDX], ra);
@@ -1872,7 +1850,7 @@ static void saveContextException() {
     u32 pcb = LoadFromLE(psxMu32ref(G_PROCESS));
     u32 tcb = LoadFromLE(psxMu32ref(pcb));
 
-    auto context = (u32*)PSXM(tcb & USEG_MASK);
+    auto context = (u32*)PSXM(tcb & PS1_SegmentAddrMask);
     saveContextR3K(context);
 
     StoreToLE(context[TCB_PC_IDX], CP0_EPC);
@@ -1890,7 +1868,7 @@ static void restoreContextR3K(u32* context) {
 }
 
 static void restoreContextChangeThread(u32 tcb) {
-    auto context = (u32*)PSXM(tcb & USEG_MASK);
+    auto context = (u32*)PSXM(tcb & PS1_SegmentAddrMask);
     restoreContextR3K(context);
 
     pc0 = LoadFromLE(context[TCB_PC_IDX]);
@@ -1914,7 +1892,7 @@ static void restoreContextException() {
     u32 pcb = LoadFromLE(psxMu32ref(G_PROCESS));
     u32 tcb = LoadFromLE(psxMu32ref(pcb));
 
-    auto context = (u32*)PSXM(tcb & USEG_MASK);
+    auto context = (u32*)PSXM(tcb & PS1_SegmentAddrMask);
     restoreContextR3K(context);
 
     pc0 = LoadFromLE(context[TCB_PC_IDX]);
@@ -1956,7 +1934,7 @@ void psxBios_OpenTh(HLE_BIOS_CALL_ARGS) { // 0e
     PSXBIOS_LOG("psxBios_%s: 0x%x (%d) (func:0x%x)\n", biosB0n[0x0e], tcb, th, a0);
 
     // Reserve the thread
-    auto context = (u32*)PSXM(tcb & USEG_MASK);
+    auto context = (u32*)PSXM(tcb & PS1_SegmentAddrMask);
     StoreToLE(context[0], TCB_THREAD_RESERVED);
     // Update register info of the thread
     StoreToLE(context[2 + 28], a2);     // GP
@@ -2009,7 +1987,7 @@ void psxBios_ChangeTh(HLE_BIOS_CALL_ARGS) { // 10
     restoreContextChangeThread(tcb);
 
     // Save the new current thread
-    psxMu32ref(pcb) = tcb | KSEG;
+    psxMu32ref(pcb) = tcb | PS1_KernelSegment;
 
     PSXBIOS_LOG("psxBios_%s: from %x to %x\n", biosB0n[0x10], tcb_current, tcb);
 }
@@ -2997,14 +2975,14 @@ static void initProcessAndThread(u32 kernel_pcb, u32 kernel_tcb) {
     // between thread
 
     // Setup Global pointer to process and thread blocks
-    StoreToLE(psxMu32ref(G_PROCESS), kernel_pcb | KSEG);
+    StoreToLE(psxMu32ref(G_PROCESS), kernel_pcb | PS1_KernelSegment);
     StoreToLE(psxMu32ref(G_PROCESS_SIZE), SIZEOF_PCB * PCB_MAX);
 
-    StoreToLE(psxMu32ref(G_THREADS), kernel_tcb | KSEG);
+    StoreToLE(psxMu32ref(G_THREADS), kernel_tcb | PS1_KernelSegment);
     StoreToLE(psxMu32ref(G_THREADS_SIZE), SIZEOF_TCB * TCB_MAX);
 
     // Fill the process control block. Basically a pointer to current thread (so TCB slot 0)
-    StoreToLE(psxMu32ref(kernel_pcb), kernel_tcb | KSEG); // store pointer to process control block
+    StoreToLE(psxMu32ref(kernel_pcb), kernel_tcb | PS1_KernelSegment); // store pointer to process control block
     // Fill the thread control block. Basically set RESERVED/FREE on threads
     memset(PSXM(kernel_tcb), 0, SIZEOF_TCB * TCB_MAX);
     StoreToLE(psxMu32ref(kernel_tcb), TCB_THREAD_RESERVED);
@@ -3025,7 +3003,7 @@ static void initEvents(u32 kernel_evcb) {
 
 static void initHandlers(u32 kernel_handler) {
     // Setup Global pointer to irqs handlers
-    StoreToLE(psxMu32ref(G_HANDLERS), kernel_handler | KSEG);
+    StoreToLE(psxMu32ref(G_HANDLERS), kernel_handler | PS1_KernelSegment);
     StoreToLE(psxMu32ref(G_HANDLERS_SIZE), SIZEOF_HANDLER * HANDLER_MAX);
     // Fill the IRQ handlers info with 0
     memset(PSXM(kernel_handler), 0, SIZEOF_HANDLER * HANDLER_MAX);
@@ -3970,7 +3948,7 @@ extern "C" int HleDispatchCall(uint32_t pc) {
         return 1;
     }
 
-    auto masked_pc = pc & USEG_MASK;
+    auto masked_pc = pc & PS1_SegmentAddrMask;
 
     switch (masked_pc) {
         case 0x1FC00180:
@@ -4021,8 +3999,8 @@ void HleHookAfterLoadState(const char* game_code) {
     auto* ram_hle = (u32*)PSX_RAM_START;
     auto* ram_old = (u32*)ram.data();
     auto copy_ram = [&](u32 to, u32 from, u32 size) {
-        to &= USEG_MASK;
-        from &= USEG_MASK;
+        to &= PS1_SegmentAddrMask;
+        from &= PS1_SegmentAddrMask;
         memcpy((u8*)ram_hle + to, (u8*)ram_old + from, size);
     };
     auto copy_data_struct = [&](u32 data) {

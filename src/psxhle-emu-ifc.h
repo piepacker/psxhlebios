@@ -226,6 +226,7 @@ static const uint32_t PS1_FASTRAMSIZE		= 0x00000400; // 1KB
 static const uint32_t PS1_BIOSSIZE			= 0x00080000; // 512KB
 static const uint32_t PS1_BIOSRAMSIZE		= 0x00010000; // 512KB
 static const uint32_t PS1_SegmentAddrMask	= 0x1fffffff; // masks away all segment information, useful since most emu operations don't need to care
+static const uint32_t PS1_KernelSegment     = 0x80000000;
 
 static const uint32_t PS1_FastRamStart		= 0x1f800000;
 static const uint32_t PS1_FastRamEnd		= 0x1f800000 + PS1_FASTRAMSIZE;
