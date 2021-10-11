@@ -5,6 +5,7 @@
 
 #include "libpsxbios.h"
 #include "icy_assert.h"
+#include "libpsxbios_internal.h"
 
 #if HLE_PCSX_IFC
 #   include "psxcommon.h"
@@ -359,6 +360,17 @@ static void ClearAllCaches(u32 address, u32 size) {
 }
 #endif
 
+// API to access memcard
+void VmcDirty(int port);
+void VmcCreate(int port);
+bool VmcEnabled(int port, int slot = 0);
+void VmcWriteNV(int port, int dst_offset, const void* src, int size);
+char* VmcGet(int port);
+
+// API to access PAD
+void PAD_startPoll(int port);
+uint8_t PAD_poll(int port, uint8_t in);
+bool PAD_connected(int port);
 
 // HleYieldUid is a combination of the following traits:
 //  - the BIOS call table thunk address (A0/B0/C0 are standard BIOS thunks), max value 0xffff
@@ -368,8 +380,6 @@ static void ClearAllCaches(u32 address, u32 size) {
 // The original BIOS has thunks at A0/B0/C0. A custom HLE could add pseudo-addresses.
 // The yield state is determined by the yield system API, which auto-increments the yield state at each
 // call to a yield site.
-using HleYieldUid = uint32_t;
-
 HleYieldUid MakeYieldCallId(uint32_t biosCallPage, uint32_t biosCallId);
 
 static bool IsHlePC(u32 pc) {

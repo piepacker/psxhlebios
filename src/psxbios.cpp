@@ -59,33 +59,6 @@ extern int big_dump;
 const u32 USEG_MASK   = 0x1FFF'FFFF;
 const u32 KSEG        = 0x8000'0000;
 
-// Magic value to match the PSX "ABI"
-const u32 TCB_THREAD_FREE     = 0x1000;
-const u32 TCB_THREAD_RESERVED = 0x4000;
-const u32 SIZEOF_PCB          = 0x8;
-const u32 SIZEOF_TCB          = 0xC0;
-const u32 SIZEOF_HANDLER      = 0x8;
-const u32 SIZEOF_EVCB         = 0x1C;
-
-const u32 G_HANDLERS      = 0x0100;
-const u32 G_HANDLERS_SIZE = 0x0104;
-const u32 G_PROCESS       = 0x0108;
-const u32 G_PROCESS_SIZE  = 0x010C;
-const u32 G_THREADS       = 0x0110;
-const u32 G_THREADS_SIZE  = 0x0114;
-const u32 G_EVENTS        = 0x0120;
-const u32 G_EVENTS_SIZE   = 0x0124;
-const u32 G_FILES         = 0x0140;
-const u32 G_FILES_SIZE    = 0x0144;
-const u32 G_DEVICES       = 0x0150;
-const u32 G_DEVICES_SIZE  = 0x0154;
-const u32 TABLE_A0        = 0x0200; // vector for call a0
-const u32 TABLE_B0        = 0x0874; // vector for call b0
-const u32 TABLE_C0        = 0x0674; // vector for call c0
-
-const u32 TIMER_IRQ_AUTO_ACK = 0x8600;
-// End of Magic value
-
 // Default value of internal structure size
 u32 PCB_MAX                   = 1;
 u32 TCB_MAX                   = 4;
@@ -130,305 +103,6 @@ static bool is_suppressed(const char* check) {
 #undef SysPrintf
 #define SysPrintf(fmt, ...) (printf(fmt, ##__VA_ARGS__), fflush(stdout))
 
-const char * const biosA0n[256] = {
-// 0x00
-    "open",		"lseek",	"read",		"write",
-    "close",	"ioctl",	"exit",		"sys_a0_07",
-    "getc",		"putc",		"todigit",	"atof",
-    "strtoul",	"strtol",	"abs",		"labs",
-// 0x10
-    "atoi",		"atol",		"atob",		"setjmp",
-    "longjmp",	"strcat",	"strncat",	"strcmp",
-    "strncmp",	"strcpy",	"strncpy",	"strlen",
-    "index",	"rindex",	"strchr",	"strrchr",
-// 0x20
-    "strpbrk",	"strspn",	"strcspn",	"strtok",
-    "strstr",	"toupper",	"tolower",	"bcopy",
-    "bzero",	"bcmp",		"memcpy",	"memset",
-    "memmove",	"memcmp",	"memchr",	"rand",
-// 0x30
-    "srand",	"qsort",	"strtod",	"malloc",
-    "free",		"lsearch",	"bsearch",	"calloc",
-    "realloc",	"InitHeap",	"_exit",	"getchar",
-    "putchar",	"gets",		"puts",		"printf",
-// 0x40
-    "sys_a0_40",		"LoadTest",					"Load",		"Exec",
-    "FlushCache",		"InstallInterruptHandler",	"GPU_dw",	"mem2vram",
-    "SendGPUStatus",	"GPU_cw",					"GPU_cwb",	"SendPackets",
-    "sys_a0_4c",		"GetGPUStatus",				"GPU_sync",	"sys_a0_4f",
-// 0x50
-    "sys_a0_50",		"LoadExec",				"GetSysSp",		"sys_a0_53",
-    "_96_init()",		"_bu_init()",			"_96_remove()",	"sys_a0_57",
-    "sys_a0_58",		"sys_a0_59",			"sys_a0_5a",	"dev_tty_init",
-    "dev_tty_open",		"sys_a0_5d",			"dev_tty_ioctl","dev_cd_open",
-// 0x60
-    "dev_cd_read",		"dev_cd_close",			"dev_cd_firstfile",	"dev_cd_nextfile",
-    "dev_cd_chdir",		"dev_card_open",		"dev_card_read",	"dev_card_write",
-    "dev_card_close",	"dev_card_firstfile",	"dev_card_nextfile","dev_card_erase",
-    "dev_card_undelete","dev_card_format",		"dev_card_rename",	"dev_card_6f",
-// 0x70
-    "_bu_init",			"_96_init",		"_96_remove",		"sys_a0_73",
-    "sys_a0_74",		"sys_a0_75",	"sys_a0_76",		"sys_a0_77",
-    "_96_CdSeekL",		"sys_a0_79",	"sys_a0_7a",		"sys_a0_7b",
-    "_96_CdGetStatus",	"sys_a0_7d",	"_96_CdRead",		"sys_a0_7f",
-// 0x80
-    "sys_a0_80",		"sys_a0_81",	"sys_a0_82",		"sys_a0_83",
-    "sys_a0_84",		"_96_CdStop",	"sys_a0_86",		"sys_a0_87",
-    "sys_a0_88",		"sys_a0_89",	"sys_a0_8a",		"sys_a0_8b",
-    "sys_a0_8c",		"sys_a0_8d",	"sys_a0_8e",		"sys_a0_8f",
-// 0x90
-    "sys_a0_90",		"sys_a0_91",	"sys_a0_92",		"sys_a0_93",
-    "sys_a0_94",		"sys_a0_95",	"AddCDROMDevice",	"AddMemCardDevide",
-    "DisableKernelIORedirection",		"EnableKernelIORedirection", "sys_a0_9a", "sys_a0_9b",
-    "SetConf",			"GetConf",		"sys_a0_9e",		"SetMem",
-// 0xa0
-    "_boot",			"SystemError",	"EnqueueCdIntr",	"DequeueCdIntr",
-    "sys_a0_a4",		"ReadSector",	"get_cd_status",	"bufs_cb_0",
-    "bufs_cb_1",		"bufs_cb_2",	"bufs_cb_3",		"_card_info",
-    "_card_load",		"_card_auto",	"bufs_cd_4",		"sys_a0_af",
-// 0xb0
-    "sys_a0_b0",		"sys_a0_b1",	"do_a_long_jmp",	"sys_a0_b3",
-    "?? sub_function",
-};
-
-const char * const biosB0n[256] = {
-// 0x00
-    "SysMalloc",		"SysFree",	"sys_b0_02",	"sys_b0_03",
-    "sys_b0_04",		"sys_b0_05",	"sys_b0_06",	"DeliverEvent",
-    "OpenEvent",		"CloseEvent",	"WaitEvent",	"TestEvent",
-    "EnableEvent",		"DisableEvent",	"OpenTh",		"CloseTh",
-// 0x10
-    "ChangeTh",			"sys_b0_11",	"InitPAD",		"StartPAD",
-    "StopPAD",			"PAD_init",		"PAD_dr",		"ReturnFromExecption",
-    "ResetEntryInt",	"HookEntryInt",	"sys_b0_1a",	"sys_b0_1b",
-    "sys_b0_1c",		"sys_b0_1d",	"sys_b0_1e",	"sys_b0_1f",
-// 0x20
-    "UnDeliverEvent",	"sys_b0_21",	"sys_b0_22",	"sys_b0_23",
-    "sys_b0_24",		"sys_b0_25",	"sys_b0_26",	"sys_b0_27",
-    "sys_b0_28",		"sys_b0_29",	"sys_b0_2a",	"sys_b0_2b",
-    "sys_b0_2c",		"sys_b0_2d",	"sys_b0_2e",	"sys_b0_2f",
-// 0x30
-    "sys_b0_30",		"sys_b0_31",	"open",			"lseek",
-    "read",				"write",		"close",		"ioctl",
-    "exit",				"sys_b0_39",	"getc",			"putc",
-    "getchar",			"putchar",		"gets",			"puts",
-// 0x40
-    "cd",				"format",		"firstfile",	"nextfile",
-    "rename",			"delete",		"undelete",		"AddDevice",
-    "RemoveDevice",		"PrintInstalledDevices", "InitCARD", "StartCARD",
-    "StopCARD",			"sys_b0_4d",	"_card_write",	"_card_read",
-// 0x50
-    "_new_card",		"Krom2RawAdd",	"sys_b0_52",	"sys_b0_53",
-    "_get_errno",		"_get_error",	"GetC0Table",	"GetB0Table",
-    "_card_chan",		"sys_b0_59",	"sys_b0_5a",	"ChangeClearPAD",
-    "_card_status",		"_card_wait",
-};
-
-const char * const biosC0n[256] = {
-// 0x00
-    "InitRCnt",			  "InitException",		"SysEnqIntRP",		"SysDeqIntRP",
-    "get_free_EvCB_slot", "get_free_TCB_slot",	"ExceptionHandler",	"InstallExeptionHandler",
-    "SysInitMemory",	  "SysInitKMem",		"ChangeClearRCnt",	"SystemError",
-    "InitDefInt",		  "sys_c0_0d",			"sys_c0_0e",		"sys_c0_0f",
-// 0x10
-    "sys_c0_10",		  "sys_c0_11",			"InstallDevices",	"FlushStfInOutPut",
-    "sys_c0_14",		  "_cdevinput",			"_cdevscan",		"_circgetc",
-    "_circputc",		  "ioabort",			"sys_c0_1a",		"KernelRedirect",
-    "PatchAOTable",
-};
-
-#if HLE_PCSX_IFC
-void VmcReadNV(int port, int slot, void* dest, int offset, int size) {
-    dbg_check((u32)port < 2);
-}
-
-bool VmcEnabled(int port, int slot = 0) {
-    dbg_check((u32)port < 2);
-    return !McdDisable[port];
-}
-
-char* VmcGet(int port) {
-    dbg_check((u32)port < 2);
-    auto* dest = port ? Mcd2Data : Mcd1Data;
-    return dest;
-}
-
-void VmcCreate(int port) {
-    dbg_check((u32)port < 2);
-    if (port == 0) {
-        CreateMcd(Config.Mcd1);
-        LoadMcd(1, Config.Mcd1);
-    } else {
-        CreateMcd(Config.Mcd2);
-        LoadMcd(2, Config.Mcd2);
-    }
-}
-
-void VmcDirty(int port) {
-    dbg_check((u32)port < 2);
-    // Flush the full mcard, don't bother with partial write
-    SaveMcd(port ? Config.Mcd2 : Config.Mcd1, VmcGet(port), 0, MCD_SIZE);
-}
-
-void VmcWriteNV(int port, int dst_offset, const void* src, int size) {
-    dbg_check((u32)port < 2);
-    auto dst = VmcGet(port);
-    if (dst == nullptr) return;
-
-    memcpy(dst + dst_offset, src, size);
-    VmcDirty(port);
-}
-#endif
-
-#if HLE_MEDNAFEN_IFC
-#include "mednafen/psx/frontio.h"
-extern FrontIO *PSX_FIO;        // defined by libretro. dunno why this isn't baked into the PSX core for mednafen. --jstine
-void VmcWriteNV(int port, int slot, const void* src, int offset, int size) {
-    dbg_check((u32)port < 2);
-    if (auto mcd = PSX_FIO->GetMemcardDevice(port))
-        mcd->WriteNV((const uint8_t*)src, offset, size);
-}
-
-void VmcReadNV(int port, int slot, void* dest, int offset, int size) {
-    dbg_check((u32)port < 2);
-    if (auto mcd = PSX_FIO->GetMemcardDevice(port))
-        mcd->ReadNV((uint8_t*)dest, offset, size);
-}
-
-bool VmcEnabled(int port, int slot = 0) {
-    dbg_check((u32)port < 2);
-    if (auto mcd = PSX_FIO->GetMemcardDevice(port)) {
-        return 1;
-    }
-
-    return 0;
-}
-
-char* VmcGet(int port) {
-    dbg_check((u32)port < 2);
-    return PSX_FIO->GetMemcardDevice(port);
-}
-
-void VmcCreate(int port) {
-    dbg_check((u32)port < 2);
-}
-#endif
-
-#if HLE_DUCKSTATION_IFC
-void VmcDirty(int port) {
-    dbg_check((u32)port < 2);
-    // FIXME need to set m_changed of the memory card in DS to flush the memory
-    // card to the disk
-}
-
-char* VmcGet(int port) {
-    dbg_check((u32)port < 2);
-    auto card = g_pad.GetMemoryCard(port);
-    if (!card)
-        return nullptr;
-
-    auto& data = card->GetData();
-    return (char*)data.data();
-}
-
-void VmcWriteNV(int port, int dst_offset, const void* src, int size) {
-    dbg_check((u32)port < 2);
-    auto dst = VmcGet(port);
-    if (dst == nullptr) return;
-
-    memcpy(dst + dst_offset, src, size);
-    VmcDirty(port);
-}
-
-void VmcReadNV(int port, int slot, void* dest, int offset, int size) {
-    dbg_check((u32)port < 2);
-}
-
-bool VmcEnabled(int port, int slot = 0) {
-    dbg_check((u32)port < 2);
-    auto card = g_pad.GetMemoryCard(port);
-    return card != nullptr;
-}
-
-void VmcCreate(int port) {
-}
-#endif
-
-enum class EVENT_STATUS : uint32_t {
-    FREE       = 0x0000,
-    DISABLED   = 0x1000,
-    ENABLED    = 0x2000, // AKA 'busy'
-    DELIVERED  = 0x4000, // AKA 'ready', 'pending'
-};
-
-enum class EVENT_MODE : uint32_t {
-    CALLBACK    = 0x1000,
-    NO_CALLBACK = 0x2000,
-};
-
-const uint32_t EVENT_CLASS_CARD_HW   = 0xf000'0011;
-const uint32_t EVENT_CLASS_CARD_BIOS = 0xf400'0001;
-const uint32_t EVENT_CLASS_TIMER     = 0xf200'0000;
-const uint32_t EVENT_CLASS_EXCEPTION = 0xf000'0010;
-
-const uint32_t EVENT_SPEC_INTERRUPT = 0x0002;
-const uint32_t EVENT_SPEC_END_IO    = 0x0004;
-const uint32_t EVENT_SPEC_SYSCALL   = 0x4000;
-
-/*
-typedef struct {
-    s32 next;
-    s32 func1;
-    s32 func2;
-    s32 pad;
-} SysRPst;
-*/
-
-typedef struct {
-    u32 status;
-    u32 _pad0;
-    u32 reg[32];
-    u32 func;
-    u32 gpr_hi;
-    u32 gpr_lo;
-    u32 SR;
-    u32 cause;
-    u32 _pad1[9];
-} TCB;
-static_assert(sizeof(TCB) == SIZEOF_TCB);
-const u32 TCB_REGS_IDX   = offsetof(TCB, reg)/ 4;
-const u32 TCB_HI_IDX     = offsetof(TCB, gpr_hi)/ 4;
-const u32 TCB_LO_IDX     = offsetof(TCB, gpr_lo)/ 4;
-const u32 TCB_PC_IDX     = offsetof(TCB, func)/ 4;
-const u32 TCB_STATUS_IDX = offsetof(TCB, SR)/ 4;
-const u32 TCB_CAUSE_IDX  = offsetof(TCB, cause)/ 4;
-
-typedef struct {
-    u32 ev;
-    EVENT_STATUS status;
-    u32 spec;
-    EVENT_MODE mode;
-    u32 fhandler;
-    u32 pad0;
-    u32 pad1;
-} EVCB;
-
-struct DIRENTRY {
-    char name[20];
-    s32 attr;
-    s32 size;
-    u32 next;
-    s32 head;
-    char system[4];
-};
-
-typedef struct {
-    char name[32];
-    u32  mode;
-    u32  offset;
-    u32  mcfile;
-} FileDesc;
-
 struct HleState {
     u32 version;
     // Entry point
@@ -455,7 +129,6 @@ struct HleState {
 };
 static HleState* g;
 
-
 // oh silly PCSX. they did the classic VM nono and just recursively called the interpreter
 // in order to emulate softCalls. A miracle this ever worked.
 // This hleSoftCall hack works around the common case failure of one re-entrant call, but fails
@@ -464,11 +137,6 @@ static HleState* g;
 // friendly fashion)
 
 uint8_t hleSoftCall = 0;
-
-// its really helpful to be able to change the call signature of all these functions at once.
-#define HLE_BIOS_CALL_ARGS HleYieldUid huid
-#define HLE_BIOS_INVOKE_ARGS huid
-#define HLE_BIOS_DUMMY_ARGS 0
 
 static inline void softCall(u32 pc) {
     u32 sra = ra;
@@ -501,7 +169,7 @@ static inline void INTERNAL_CP0_EXIT_CRITICAL_SECTION() {
     CP0_STATUS = LoadFromLE(psxMu32ref(KERNEL_CP0_STATUS));
 }
 
-static inline EVCB* GetEVCB() {
+EVCB* GetEVCB() {
     u32 evcb_addr = LoadFromLE(psxMu32ref(G_EVENTS));
     return(EVCB*)PSXM(evcb_addr);
 }
@@ -2995,7 +2663,7 @@ void psxBios__card_read(HLE_BIOS_CALL_ARGS) { // 0x4f
     void *pa2 = Ra2;
     int port;
 
-    PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x4f]);
+    PSXBIOS_LOG("psxBios_%s %x %x\n", biosB0n[0x4f], a0, a1);
 
     /*
     Function also accepts sector 400h (a bug).
@@ -3217,11 +2885,6 @@ void psxBios_InitDefInt(HLE_BIOS_CALL_ARGS) { // 0c
     pc0 = ra;
 }
 
-using VoidFnptr = void (*)();
-using HleBiosFnptr = void (*)(HLE_BIOS_CALL_ARGS);
-
-using HLE_BIOS_TABLE = HleBiosFnptr[256];
-
 HLE_BIOS_TABLE biosA0 = {};
 HLE_BIOS_TABLE biosB0 = {};
 HLE_BIOS_TABLE biosC0 = {};
@@ -3326,33 +2989,6 @@ void psxBiosInit() {
 void psxBiosInitOnlyLib() {
     psxBiosInit_StdLib();
     psxBiosInit_Lib();
-}
-
-// Intended to be called by the emulator as a basic bios tracing
-void psxBiosPrintCall(int table) {
-    bool print_all = false;
-    bool print_spam = false;
-    int call = t1 & 0xff;
-    if (table == 0xA0) {
-        if (print_all || biosA0[call])
-            PSXBIOS_LOG("psxBios traceA: %s (0x%x, 0x%x, 0x%x, 0x%x) (EPC:0x%x, RA:0x%x)\n", biosA0n[call], a0, a1, a2, a3, CP0_EPC, ra);
-    } else if (table == 0xB0) {
-        if (!print_spam && (call == 0xb || call == 0x17))
-            return;
-        if (call == 0x3d)
-            PSXBIOS_LOG("psxBios put: %c\n", a0);
-        else if (print_all || biosB0[call])
-            PSXBIOS_LOG("psxBios traceB: %s (0x%x, 0x%x, 0x%x, 0x%x) (EPC:0x%x, RA:0x%x)\n", biosB0n[call], a0, a1, a2, a3, CP0_EPC, ra);
-    } else if (table == 0xC0) {
-        if (print_all || biosC0[call])
-            PSXBIOS_LOG("psxBios traceC: %s (0x%x, 0x%x, 0x%x, 0x%x) (EPC:0x%x, RA:0x%x)\n", biosC0n[call], a0, a1, a2, a3, CP0_EPC, ra);
-    }
-    if (table == 0xB0 && call == 0x10) {
-        u32 pcb = LoadFromLE(psxMu32ref(G_PROCESS));
-        u32 tcb_current = LoadFromLE(psxMu32ref(pcb));
-        u32 tcb_0 = LoadFromLE(psxMu32ref(G_THREADS));
-        PSXBIOS_LOG("Change Thread from %x (%d)\n", tcb_current, (tcb_current - tcb_0) / SIZEOF_TCB);
-    }
 }
 
 static void initProcessAndThread(u32 kernel_pcb, u32 kernel_tcb) {
@@ -4034,49 +3670,6 @@ void psxBiosLoadExecCdrom() {
         printf("[ERROR]: Failed to load boot executable: %s\n", exedata);
     }
 }
-
-#if HLE_PCSX_IFC
-void PAD_startPoll(int port) {
-    if (port == 0) {
-        PAD1_startPoll(1);
-    } else {
-        PAD2_startPoll(2);
-    }
-}
-
-u8 PAD_poll(int port, u8 in) {
-    if (port == 0) {
-        return PAD1_poll(in);
-    } else {
-        return PAD2_poll(in);
-    }
-}
-
-bool PAD_connected(int port) {
-    return true;
-}
-#endif
-
-#if HLE_DUCKSTATION_IFC
-bool PAD_connected(int port) {
-    return g_pad.GetController(port) != nullptr;
-}
-
-u8 PAD_poll(int port, u8 in) {
-    const u8 hiz = 0xff;
-    auto controller = g_pad.GetController(port);
-    if (controller == nullptr)
-        return hiz;
-
-    u8 out = hiz;
-    bool ack = controller->Transfer(in, &out);
-    return out;
-}
-
-void PAD_startPoll(int port) {
-    PAD_poll(port, 0x01);
-}
-#endif
 
 void psxBios_PADpoll(int pad, u8* buf) {
     const u8 hiz = 0xff;

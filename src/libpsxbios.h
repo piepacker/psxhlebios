@@ -26,29 +26,16 @@
 extern "C" {
 #endif
 
-extern const char * const biosA0n[256];
-extern const char * const biosB0n[256];
-extern const char * const biosC0n[256];
-
-void psxBiosInit_StdLib();
-void psxBiosInit_Lib();
-
 void psxBiosInitFull();
 void psxBiosInitOnlyLib();
 void psxBiosInit();
 
-void psxBiosPrintCall(int table);
-
 void psxBiosLoadExecCdrom();
-void psxBiosShutdown();
-void psxBiosException80();
-void psxBiosFreeze(int Mode);
-void psxBiosInitKernelDataStructure();
 
 int HleDispatchCall(uint32_t pc);
 void HleHookAfterLoadState(const char* game_code);
 
-extern uint8_t hleSoftCall;
+void psxBiosPrintCall(int table);
 
 #ifdef __cplusplus
 }
