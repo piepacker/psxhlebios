@@ -54,10 +54,6 @@
 #   include <zlib.h>
 #endif
 
-extern int big_dump;
-
-const u32 KSEG        = 0x8000'0000;
-
 // Default value of internal structure size
 u32 PCB_MAX                   = 1;
 u32 TCB_MAX                   = 4;
@@ -116,10 +112,12 @@ static HleState* g;
 
 uint8_t hleSoftCall = 0;
 
-static inline void softCall(u32 pc) {
+void softCall(u32 pc) {
+    //PSXBIOS_LOG("softCall %x:%x\n", pc, ra);
     u32 sra = ra;
     HleExecuteRecursive(pc, kSoftCallBaseRetAddr);
     ra = sra;
+    //PSXBIOS_LOG("end softCall\n");
 }
 
 const u32 CP0_MODE_MASK     = 0x3F;
@@ -147,27 +145,7 @@ static inline void INTERNAL_CP0_EXIT_CRITICAL_SECTION() {
     CP0_STATUS = LoadFromLE(psxMu32ref(KERNEL_CP0_STATUS));
 }
 
-EVCB* GetEVCB() {
-    u32 evcb_addr = LoadFromLE(psxMu32ref(G_EVENTS));
-    return(EVCB*)PSXM(evcb_addr);
-}
-
-static inline void DeliverEvent(u32 ev, u32 spec) {
-    // Quite spammy due to default kernel IRQ (vsync and timers)
-    //PSXBIOS_LOG("DeliverEvent %x;%x\n", ev, spec);
-    auto evcb = GetEVCB();
-    for (u32 i = 0; i < EVCB_MAX; i++) {
-        if (evcb[i].status == EVENT_STATUS::ENABLED && evcb[i].ev == ev && evcb[i].spec == spec) {
-            if (evcb[i].mode == EVENT_MODE::CALLBACK)
-                softCall(evcb[i].fhandler);
-            else
-                evcb[i].status = EVENT_STATUS::DELIVERED;
-        }
-    }
-}
-
-void psxBios_todigit(HLE_BIOS_CALL_ARGS) // 0x0a
-{
+void psxBios_todigit(HLE_BIOS_CALL_ARGS) { // 0x0a
     int c = a0;
 
     PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x0a]);
@@ -1429,12 +1407,12 @@ void psxBios__bu_init(HLE_BIOS_CALL_ARGS) { // 70
     //   handle for us via its own MIPS state machine. --jstine
 
     int baseState = SCRI_psxBios__bu_init_00;
-    DeliverEvent(baseState++, EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
-    DeliverEvent(baseState++, EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO);
+    PostAsyncEvent(baseState++, EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
+    PostAsyncEvent(baseState++, EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO);
 
 #else
-    DeliverEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
-    DeliverEvent(EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO);
+    PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
+    PostAsyncEvent(EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO);
 
     pc0 = ra;
 #endif
@@ -1524,8 +1502,8 @@ void psxBios__card_info(HLE_BIOS_CALL_ARGS) { // ab
 
     // Game (Future cops LAPD) calls card_info from the handler of the event
     // EVENT_CLASS_CARD_HW/0x4 so I doubt that event must be generated here
-    //DeliverEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
-    DeliverEvent(EVENT_CLASS_CARD_BIOS, 1 << ret);
+    PostAsyncEvent(EVENT_CLASS_CARD_BIOS, 1 << ret);
+    //PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
 
     v0 = 1; pc0 = ra;
 }
@@ -1535,7 +1513,11 @@ void psxBios__card_load(HLE_BIOS_CALL_ARGS) { // ac
 
     g->card_active_chan = a0;
 
-    DeliverEvent(EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO);
+    // Load will read all memory card sector, so it shall trigger multiple (36?) EVENT_CLASS_CARD_HW events
+    // At the end of operation a EVENT_CLASS_CARD_BIOS is generated
+    PostAsyncEvent(EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO);
+    // Due to async nature a EVENT_CLASS_CARD_HW might remain (Police LPAD expect this extra event to load mcard)
+    PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
 
     v0 = 1; pc0 = ra;
 }
@@ -1644,178 +1626,6 @@ void psxBios_ChangeClearRCnt(HLE_BIOS_CALL_ARGS) { // 0a
     *ptr = a1;
 
 //	psxRegs.CP0.n.Status|= 0x404;
-    pc0 = ra;
-}
-
-static int getFreeEventSlot() {
-    auto evcb = GetEVCB();
-    for (int i = 0; i < (int)EVCB_MAX; i++) {
-        if (evcb[i].status == EVENT_STATUS::FREE) return i;
-    }
-    return -1;
-}
-
-void psxBios_DeliverEvent(HLE_BIOS_CALL_ARGS) { // 07
-    PSXBIOS_LOG("psxBios_%s %x,%x\n", biosB0n[0x07], a0, a1);
-
-    DeliverEvent(a0, a1);
-
-    pc0 = ra;
-}
-
-void psxBios_OpenEvent(HLE_BIOS_CALL_ARGS) { // 08
-    u32 evcb_max = LoadFromLE(psxMu32ref(G_EVENTS_SIZE)) / SIZEOF_EVCB;
-    if (evcb_max != EVCB_MAX) {
-        PSXBIOS_LOG("psxBios_OpenEvent() WARNING! max events was updated from %d to %d\n", EVCB_MAX, evcb_max);
-        EVCB_MAX = evcb_max;
-    }
-
-    PSXBIOS_LOG("psxBios_%s (class:%x, spec:%x, mode:%x, func:%x)\n", biosB0n[0x08], a0, a1, a2, a3);
-
-    auto slot = getFreeEventSlot();
-    if (slot < 0) {
-        v0 = slot;
-        pc0 = ra;
-        SysPrintf("OpenEvent: no more slot available\n");
-        return;
-    } else {
-        auto evcb = GetEVCB();
-        evcb[slot].status = EVENT_STATUS::DISABLED; //  Don't use setOpenEventStatus to set status
-        evcb[slot].ev = a0;
-        evcb[slot].spec = a1;
-        evcb[slot].mode = (EVENT_MODE)a2;
-        evcb[slot].fhandler = a3;
-    }
-
-    v0 = slot | 0xf100'0000;
-    pc0 = ra;
-
-    SysPrintf("\t\t\tslot => %x\n", v0);
-}
-
-bool isValidSlot(u32 slot) {
-    slot &= 0xFFFF;
-    u32 evcb_max = LoadFromLE(psxMu32ref(G_EVENTS_SIZE)) / SIZEOF_EVCB;
-    if (slot >= evcb_max) {
-        // Game is buggy and depends on an "undefined" behavior
-        // In order to behave like the original bios, we will need to have the same
-        // start address for the EVCB...
-        SysPrintf("\t\t\t=> invalid slot (%x)\n", slot);
-        return false;
-    }
-
-    return true;
-}
-
-void setOpenEventStatus(u32 slot, EVENT_STATUS status) {
-    if (!isValidSlot(slot)) {
-        return;
-    }
-
-    slot &= 0xFFFF;
-    auto evcb = GetEVCB();
-    if (evcb[slot].status != EVENT_STATUS::FREE)
-        evcb[slot].status = status;
-}
-
-void psxBios_CloseEvent(HLE_BIOS_CALL_ARGS) { // 09
-    PSXBIOS_LOG("psxBios_%s %x\n", biosB0n[0x09], a0);
-
-    setOpenEventStatus(a0, EVENT_STATUS::FREE);
-
-    v0 = 1;
-    pc0 = ra;
-}
-
-void psxBios_WaitEvent(HLE_BIOS_CALL_ARGS) { // 0a
-    uint32_t slot = a0 & 0xFFFF;
-    if (!isValidSlot(slot)) {
-        v0 = 0;
-        pc0 = ra;
-        return;
-    }
-
-    if (s_print_waitevent_log)
-        PSXBIOS_LOG("psxBios_%s %x\n", biosB0n[0x0a], slot);
-
-    auto evcb = GetEVCB();
-    switch (evcb[slot].status) {
-        case EVENT_STATUS::DELIVERED:
-            // Event was delivered. Return valid and get back to enabled state
-            // Callback events (mode=EVENT_MODE_CALLBACK) do never set the pending/delivered state (and thus WaitEvent would hang forever).
-            if (evcb[slot].mode == EVENT_MODE::NO_CALLBACK) {
-                evcb[slot].status = EVENT_STATUS::ENABLED;
-            }
-            v0 = 1;
-            pc0 = ra;
-            s_print_waitevent_log = true;
-            break;
-
-        case EVENT_STATUS::ENABLED:
-            // Event wasn't delivered yet
-            // 1/ advance time in the emulator. 200 is a random number. The minimum time for this call is around 30 ticks.
-            // But this call is about halting the CPU waiting an event (IRQ), so it is expected to be slow
-            AdvanceClock(200);
-            // 2/ Emulate an infinite loop
-            t1  = 0x0A;
-            pc0 = 0xB0;
-            // Let's avoid the spam
-            s_print_waitevent_log = false;
-            break;
-
-        case EVENT_STATUS::DISABLED:
-        case EVENT_STATUS::FREE:
-        default:
-            s_print_waitevent_log = true;
-            // Event is invalid
-            v0 = 0;
-            pc0 = ra;
-            break;
-    }
-}
-
-void psxBios_TestEvent(HLE_BIOS_CALL_ARGS) { // 0b
-    auto slot = a0 & 0xFFFF;
-    if (!isValidSlot(slot)) {
-        v0 = 0;
-        pc0 = ra;
-        return;
-    }
-
-    auto evcb = GetEVCB();
-    if (evcb[slot].status == EVENT_STATUS::DELIVERED) {
-        if (evcb[slot].mode == EVENT_MODE::NO_CALLBACK) {
-            evcb[slot].status = EVENT_STATUS::ENABLED;
-        }
-        v0 = 1;
-    } else {
-        v0 = 0;
-    }
-    pc0 = ra;
-
-    // Print only TestEvent change. The spamy part is the polling of the result
-    //PSXBIOS_LOG_SPAM("TestEvent", "psxBios_%s %x,%x: result=%x\n", biosB0n[0x0b], ev, spec, v0);
-    if (slot < s_debug_ev.size() && s_debug_ev[slot] != v0) {
-        s_debug_ev[slot] = v0;
-        PSXBIOS_LOG("psxBios_%s %x: result=%x\n", biosB0n[0x0b], slot, v0);
-    }
-}
-
-void psxBios_EnableEvent(HLE_BIOS_CALL_ARGS) { // 0c
-    PSXBIOS_LOG("psxBios_%s %x\n", biosB0n[0x0c], a0);
-
-    setOpenEventStatus(a0, EVENT_STATUS::ENABLED);
-
-    v0 = 1;
-    pc0 = ra;
-}
-
-void psxBios_DisableEvent(HLE_BIOS_CALL_ARGS) { // 0d
-    PSXBIOS_LOG("psxBios_%s %x\n", biosB0n[0x0d], a0);
-
-    setOpenEventStatus(a0, EVENT_STATUS::DISABLED);
-
-    v0 = 1;
     pc0 = ra;
 }
 
@@ -2081,18 +1891,6 @@ void psxBios_HookEntryInt(HLE_BIOS_CALL_ARGS) { // 19
     pc0 = ra;
 }
 
-void psxBios_UnDeliverEvent(HLE_BIOS_CALL_ARGS) { // 0x20
-    PSXBIOS_LOG("psxBios_%s %x,%x\n", biosB0n[0x20], a0, a1);
-    auto evcb = GetEVCB();
-    for (u32 i = 0; i < EVCB_MAX; i++) {
-        if (evcb[i].status == EVENT_STATUS::DELIVERED && evcb[i].ev == a0 && evcb[i].spec == a1) {
-            if (evcb[i].mode == EVENT_MODE::NO_CALLBACK)
-                evcb[i].status = EVENT_STATUS::ENABLED;
-        }
-    }
-    pc0 = ra;
-}
-
 void buread(void* ra1, int mcd, int length) {
     auto mcdraw = VmcGet(mcd - 1);
     if (mcdraw == nullptr)
@@ -2106,8 +1904,8 @@ void buread(void* ra1, int mcd, int length) {
     memcpy(ra1, ptr, length);
 
     if (fd.mode & 0x8000) {
-        DeliverEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
-        DeliverEvent(EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO);
+        PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
+        PostAsyncEvent(EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO);
         v0 = 0;
     }
     else
@@ -2126,8 +1924,8 @@ void buwrite(void* ra1, int mcd, int length) {
     g->FDesc[1 + mcd].offset += length;
 
     if (g->FDesc[1 + mcd].mode & 0x8000) {
-        DeliverEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
-        DeliverEvent(EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO);
+        PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
+        PostAsyncEvent(EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO);
         v0 = 0;
     }
     else
@@ -2291,8 +2089,6 @@ void psxBios_lseek(HLE_BIOS_CALL_ARGS) { // 0x33
         case 0: // SEEK_SET
             g->FDesc[a0].offset = a1;
             v0 = a1;
-//			DeliverEvent(0x11, 0x2); // EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO
-//			DeliverEvent(0x81, 0x2); // EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO
             break;
 
         case 1: // SEEK_CUR
@@ -2438,11 +2234,11 @@ void psxBios_firstfile(HLE_BIOS_CALL_ARGS) { // 42
         g->nfile = 0;
         if (!strncmp(pa0, "bu00", 4)) {
             // firstfile() calls _card_read() internally, so deliver it's event
-            DeliverEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
+            PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
             bufile(1, a1);
         } else if (!strncmp(pa0, "bu10", 4)) {
             // firstfile() calls _card_read() internally, so deliver it's event
-            DeliverEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
+            PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
             bufile(2, a1);
         }
     }
@@ -2559,12 +2355,12 @@ void psxBios_delete(HLE_BIOS_CALL_ARGS) { // 45
         // delete() calls _card_read() internally, so deliver it's event
         if (!strncmp(pa0, "bu00", 4)) {
             budelete(1);
-            DeliverEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
+            PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
         }
 
         if (!strncmp(pa0, "bu10", 4)) {
             budelete(2);
-            DeliverEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
+            PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
         }
     }
 
@@ -2631,8 +2427,8 @@ void psxBios__card_write(HLE_BIOS_CALL_ARGS) { // 0x4e
         VmcWriteNV(port, a1 * 128, pa2, 128);
     }
 
-    DeliverEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
-//	DeliverEvent(0x81, 0x2); // EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO
+    PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
+//	PostAsyncEvent(0x81, 0x2); // EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO
 
     v0 = 1; pc0 = ra;
 }
@@ -2662,8 +2458,8 @@ void psxBios__card_read(HLE_BIOS_CALL_ARGS) { // 0x4f
             memcpy(pa2, mcdraw + a1 * 128, 128);
     }
 
-    DeliverEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
-//	DeliverEvent(0x81, 0x2); // EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO
+    PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
+//	PostAsyncEvent(0x81, 0x2); // EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO
 
     v0 = 1; pc0 = ra;
 }
@@ -2989,16 +2785,6 @@ static void initProcessAndThread(u32 kernel_pcb, u32 kernel_tcb) {
     for (auto i = 1u; i < TCB_MAX; i++) {
         StoreToLE(psxMu32ref(kernel_tcb + i * SIZEOF_TCB), TCB_THREAD_FREE);
     }
-}
-
-static void initEvents(u32 kernel_evcb) {
-    // Setup Global pointer to event blocks
-    StoreToLE(psxMu32ref(G_EVENTS), kernel_evcb | KSEG);
-    StoreToLE(psxMu32ref(G_EVENTS_SIZE), SIZEOF_EVCB * EVCB_MAX);
-
-    // Fill the struct with 0
-    auto* evcb = PSXM(kernel_evcb);
-    memset(evcb, 0, SIZEOF_EVCB * EVCB_MAX);
 }
 
 static void initHandlers(u32 kernel_handler) {
@@ -3457,9 +3243,6 @@ void psxBiosInitFull() {
 
     // Reset GPU stat, in particular enable the display
     GPU_W_STATUS(0x0300'0000);
-
-    // Init value can be anything but 0/1
-    s_debug_ev.fill(0xFF);
 }
 
 void psxBiosShutdown() {
@@ -3782,6 +3565,10 @@ void psxBiosException80() {
         case 0x00: { // Interrupt
             // PSXCPU_LOG("interrupt\n");
             saveContextException();
+
+            // Safest place to deliver event. Register context is saved, IRQ are disabled
+            DeliverAsyncEvent();
+
             sp = psxMu32(0x6c80); // create new stack for interrupt handlers
             biosInterrupt();
 

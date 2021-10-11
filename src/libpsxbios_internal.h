@@ -38,5 +38,21 @@ extern HLE_BIOS_TABLE biosA0;
 extern HLE_BIOS_TABLE biosB0;
 extern HLE_BIOS_TABLE biosC0;
 
+void softCall(uint32_t pc);
 
-extern EVCB* GetEVCB();
+// Event
+EVCB* GetEVCB();
+void DeliverEvent(uint32_t ev, uint32_t spec);
+void initEvents(uint32_t kernel_evcb);
+// Async Event
+void PostAsyncEvent(uint32_t ev, uint32_t spec);
+void DeliverAsyncEvent();
+// Event PSX
+void psxBios_DeliverEvent(HLE_BIOS_CALL_ARGS);
+void psxBios_UnDeliverEvent(HLE_BIOS_CALL_ARGS);
+void psxBios_OpenEvent(HLE_BIOS_CALL_ARGS);
+void psxBios_CloseEvent(HLE_BIOS_CALL_ARGS);
+void psxBios_WaitEvent(HLE_BIOS_CALL_ARGS);
+void psxBios_TestEvent(HLE_BIOS_CALL_ARGS);
+void psxBios_EnableEvent(HLE_BIOS_CALL_ARGS);
+void psxBios_DisableEvent(HLE_BIOS_CALL_ARGS);
