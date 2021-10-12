@@ -3088,32 +3088,14 @@ void psxBiosInitFull() {
 
     g_hle = (HleState*)(PSX_ROM_START + ROM_HLE_STATE);
     static_assert(ROM_HLE_STATE + sizeof(HleState) < ROM_FONT_8140, "Hle state is too big, overwrite font");
+
+    // Default init most field to 0
+    memset(g_hle, 0, sizeof(HleState));
+
     g_hle->version = 0;
+    g_hle->cardState = ~0;
 
     psxBiosInitKernelDataStructure();
-
-    g_hle->jmp_int = 0;
-
-    g_hle->pad_started = 0;
-    g_hle->pad_buf  = 0;
-    g_hle->pad_buf1 = 0;
-    g_hle->pad_buf2 = 0;
-
-    g_hle->heap_addr = 0;
-    g_hle->heap_size = 0;
-    g_hle->kheap_addr = 0;
-    g_hle->kheap_size = 0;
-
-    g_hle->cardState = ~0;
-    g_hle->card_active_chan = 0;
-
-    g_hle->nfile = 0;
-    memset(g_hle->ffile, 0, sizeof(g_hle->ffile));
-    memset(g_hle->FDesc, 0, sizeof(g_hle->FDesc));
-
-    g_hle->async_event_nb = 0;
-    memset(g_hle->async_events, 0, sizeof(g_hle->async_events));
-    g_hle->busy_card_info = 0;
 
     psxFs_CacheFilesystem();
 
