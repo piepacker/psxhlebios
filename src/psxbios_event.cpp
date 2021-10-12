@@ -5,7 +5,7 @@
 #include <list>
 
 // Until code is ready
-#define ASYNC_EVENT 0
+#define ASYNC_EVENT 1
 
 // Keep trace of the event status to only print change
 static std::array<u8, 256> s_debug_ev;
@@ -77,6 +77,11 @@ void PostAsyncEvent(u32 ev, u32 spec) {
 }
 
 void DeliverAsyncEvent() {
+    // Before we deliver event, mark async command as done
+    // Note: it is done before the early return check to not
+    // break the ASYNC_EVENT==0 logic
+    g_hle->busy_card_info = 0;
+
     if (g_hle->async_event_nb == 0)
         return;
 

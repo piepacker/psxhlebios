@@ -131,6 +131,7 @@ struct HleState {
     // Async event handling
     uint32_t async_event_nb;
     AsyncEventInfo async_events[64];
+    uint32_t busy_card_info;
 };
 
 extern HleState* g_hle;

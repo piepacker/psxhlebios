@@ -1455,6 +1455,13 @@ void psxBios_SetMem(HLE_BIOS_CALL_ARGS) { // 9f
 
 void psxBios__card_info(HLE_BIOS_CALL_ARGS) { // ab
     PSXBIOS_LOG("psxBios_%s: %x\n", biosA0n[0xab], a0);
+    if (g_hle->busy_card_info) {
+        SysPrintf("pending card_info, failed to register new cmd\n");
+        v0 = 0;
+        pc0 = ra;
+        return;
+    }
+    g_hle->busy_card_info = 1;
 
     u32 ret, port;
     g_hle->card_active_chan = a0;
@@ -1479,7 +1486,7 @@ void psxBios__card_info(HLE_BIOS_CALL_ARGS) { // ab
     // Game (Future cops LAPD) calls card_info from the handler of the event
     // EVENT_CLASS_CARD_HW/0x4 so I doubt that event must be generated here
     PostAsyncEvent(EVENT_CLASS_CARD_BIOS, 1 << ret);
-    //PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
+    PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
 
     v0 = 1; pc0 = ra;
 }
@@ -3106,6 +3113,7 @@ void psxBiosInitFull() {
 
     g_hle->async_event_nb = 0;
     memset(g_hle->async_events, 0, sizeof(g_hle->async_events));
+    g_hle->busy_card_info = 0;
 
     psxFs_CacheFilesystem();
 
