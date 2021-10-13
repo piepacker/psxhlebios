@@ -51,9 +51,9 @@ const uint32_t EVENT_CLASS_CARD_BIOS = 0xf400'0001;
 const uint32_t EVENT_CLASS_TIMER     = 0xf200'0000;
 const uint32_t EVENT_CLASS_EXCEPTION = 0xf000'0010;
 
-const uint32_t EVENT_SPEC_INTERRUPT = 0x0002;
-const uint32_t EVENT_SPEC_END_IO    = 0x0004;
-const uint32_t EVENT_SPEC_SYSCALL   = 0x4000;
+const uint16_t EVENT_SPEC_INTERRUPT = 0x0002;
+const uint16_t EVENT_SPEC_END_IO    = 0x0004;
+const uint16_t EVENT_SPEC_SYSCALL   = 0x4000;
 
 typedef struct {
     uint32_t ev;
@@ -102,7 +102,8 @@ typedef struct {
 
 struct AsyncEventInfo {
     uint32_t ev;
-    uint32_t spec;
+    uint16_t spec;
+    uint16_t port;
 };
 
 struct HleState {
@@ -131,7 +132,7 @@ struct HleState {
     // Async event handling
     uint32_t async_event_nb;
     AsyncEventInfo async_events[64];
-    uint32_t busy_card_info;
+    uint32_t busy_card_info; // 1 bit per port (so 2 bits)
 };
 
 extern HleState* g_hle;

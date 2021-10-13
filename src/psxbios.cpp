@@ -1376,19 +1376,23 @@ void psxBios_get_cd_status(HLE_BIOS_CALL_ARGS) //a6
 void psxBios__bu_init(HLE_BIOS_CALL_ARGS) { // 70
     PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x70]);
 
+    // This call shall init the 2 ports. But we send event once, all games boot fine
+    // so let's keep this behavior and put an invalid port number
+    uint16_t port = 0xFFFF;
+
 #if HLE_ENABLE_YIELD
     // Impl Note: honestly this would be easier rewritten as MIPS assembly.
-    //   It's just two JALs, but in order to maintain stack-engine state info at the HLE 
+    //   It's just two JALs, but in order to maintain stack-engine state info at the HLE
     //   level, we need to implement a ton of paperwork that the interpreter would simply
     //   handle for us via its own MIPS state machine. --jstine
 
     int baseState = SCRI_psxBios__bu_init_00;
-    PostAsyncEvent(baseState++, EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
-    PostAsyncEvent(baseState++, EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO);
+    PostAsyncEvent(baseState++, EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO, port);
+    PostAsyncEvent(baseState++, EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO, port);
 
 #else
-    PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
-    PostAsyncEvent(EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO);
+    PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO, port);
+    PostAsyncEvent(EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO, port);
 
     pc0 = ra;
 #endif
@@ -1455,17 +1459,20 @@ void psxBios_SetMem(HLE_BIOS_CALL_ARGS) { // 9f
 
 void psxBios__card_info(HLE_BIOS_CALL_ARGS) { // ab
     PSXBIOS_LOG("psxBios_%s: %x\n", biosA0n[0xab], a0);
-    if (g_hle->busy_card_info) {
+
+    uint16_t port = a0 >> 4;
+    uint32_t port_flag = (1u << port);
+
+    if (g_hle->busy_card_info & port_flag) {
         SysPrintf("pending card_info, failed to register new cmd\n");
         v0 = 0;
         pc0 = ra;
         return;
     }
-    g_hle->busy_card_info = 1;
+    g_hle->busy_card_info |= port_flag;
 
-    u32 ret, port;
+    u32 ret;
     g_hle->card_active_chan = a0;
-    port = g_hle->card_active_chan >> 4;
 
     switch (port) {
     case 0x0:
@@ -1485,8 +1492,8 @@ void psxBios__card_info(HLE_BIOS_CALL_ARGS) { // ab
 
     // Game (Future cops LAPD) calls card_info from the handler of the event
     // EVENT_CLASS_CARD_HW/0x4 so I doubt that event must be generated here
-    PostAsyncEvent(EVENT_CLASS_CARD_BIOS, 1 << ret);
-    PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
+    PostAsyncEvent(EVENT_CLASS_CARD_BIOS, 1 << ret, port);
+    PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO, port);
 
     v0 = 1; pc0 = ra;
 }
@@ -1495,12 +1502,13 @@ void psxBios__card_load(HLE_BIOS_CALL_ARGS) { // ac
     PSXBIOS_LOG("psxBios_%s: %x\n", biosA0n[0xac], a0);
 
     g_hle->card_active_chan = a0;
+    uint16_t port = g_hle->card_active_chan >> 4;
 
     // Load will read all memory card sector, so it shall trigger multiple (36?) EVENT_CLASS_CARD_HW events
     // At the end of operation a EVENT_CLASS_CARD_BIOS is generated
-    PostAsyncEvent(EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO);
+    PostAsyncEvent(EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO, port);
     // Due to async nature a EVENT_CLASS_CARD_HW might remain (Police LPAD expect this extra event to load mcard)
-    PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
+    PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO, port);
 
     v0 = 1; pc0 = ra;
 }
@@ -1875,7 +1883,8 @@ void psxBios_HookEntryInt(HLE_BIOS_CALL_ARGS) { // 19
 }
 
 void buread(void* ra1, int mcd, int length) {
-    auto mcdraw = VmcGet(mcd - 1);
+    uint16_t port = mcd - 1;
+    auto mcdraw = VmcGet(port);
     if (mcdraw == nullptr)
         return;
 
@@ -1887,8 +1896,8 @@ void buread(void* ra1, int mcd, int length) {
     memcpy(ra1, ptr, length);
 
     if (fd.mode & 0x8000) {
-        PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
-        PostAsyncEvent(EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO);
+        PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO, port);
+        PostAsyncEvent(EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO, port);
         v0 = 0;
     }
     else
@@ -1898,6 +1907,7 @@ void buread(void* ra1, int mcd, int length) {
 }
 
 void buwrite(void* ra1, int mcd, int length) {
+    uint16_t port = mcd - 1;
     u32 offset =  + 8192 * g_hle->FDesc[1 + mcd].mcfile + g_hle->FDesc[1 + mcd].offset;
 
     SysPrintf("write %d: %x,%x\n", g_hle->FDesc[1 + mcd].mcfile, g_hle->FDesc[1 + mcd].offset, length);
@@ -1907,8 +1917,8 @@ void buwrite(void* ra1, int mcd, int length) {
     g_hle->FDesc[1 + mcd].offset += length;
 
     if (g_hle->FDesc[1 + mcd].mode & 0x8000) {
-        PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
-        PostAsyncEvent(EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO);
+        PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO, port);
+        PostAsyncEvent(EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO, port);
         v0 = 0;
     }
     else
@@ -2222,11 +2232,11 @@ void psxBios_firstfile(HLE_BIOS_CALL_ARGS) { // 42
         g_hle->nfile = 0;
         if (!strncmp(pa0, "bu00", 4)) {
             // firstfile() calls _card_read() internally, so deliver it's event
-            PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
+            PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO, 0);
             bufile(1, a1);
         } else if (!strncmp(pa0, "bu10", 4)) {
             // firstfile() calls _card_read() internally, so deliver it's event
-            PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
+            PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO, 1);
             bufile(2, a1);
         }
     }
@@ -2343,12 +2353,12 @@ void psxBios_delete(HLE_BIOS_CALL_ARGS) { // 45
         // delete() calls _card_read() internally, so deliver it's event
         if (!strncmp(pa0, "bu00", 4)) {
             budelete(1);
-            PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
+            PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO, 0);
         }
 
         if (!strncmp(pa0, "bu10", 4)) {
             budelete(2);
-            PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
+            PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO, 1);
         }
     }
 
@@ -2415,8 +2425,8 @@ void psxBios__card_write(HLE_BIOS_CALL_ARGS) { // 0x4e
         VmcWriteNV(port, a1 * 128, pa2, 128);
     }
 
-    PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
-//	PostAsyncEvent(0x81, 0x2); // EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO
+    PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO, port);
+//	PostAsyncEvent(EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO, port);
 
     v0 = 1; pc0 = ra;
 }
@@ -2446,8 +2456,8 @@ void psxBios__card_read(HLE_BIOS_CALL_ARGS) { // 0x4f
             memcpy(pa2, mcdraw + a1 * 128, 128);
     }
 
-    PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
-//	PostAsyncEvent(0x81, 0x2); // EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO
+    PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO, port);
+//	PostAsyncEvent(EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO, port);
 
     v0 = 1; pc0 = ra;
 }

@@ -48,7 +48,7 @@ void DeliverEvent(u32 ev, u32 spec) {
     }
 }
 
-void PostAsyncEvent(u32 ev, u32 spec) {
+void PostAsyncEvent(uint32_t ev, uint16_t spec, uint16_t port) {
     // Goal of event is to be allow asynchronous bios call execution. Using synchronous event work most of the
     // time but there are few caveats.
     // * Caveat1: An handler plugged on an event might not be reentrant, so you have the risk to run concurrent handler.
@@ -67,9 +67,12 @@ void PostAsyncEvent(u32 ev, u32 spec) {
         auto& e = g_hle->async_events[g_hle->async_event_nb];
         e.ev = ev;
         e.spec = spec;
+        e.port = port;
         g_hle->async_event_nb++;
     } else {
-        PSXBIOS_LOG("ERROR: PostAsyncEvent %8x;%x can't be done ! async event stack full !!!\n", ev, spec);
+        PSXBIOS_LOG("ERROR: PostAsyncEvent %8x;%x (port=%d) can't be done ! async event stack full !!!\n", ev, spec, port);
+        // Probably shouldn't happen
+        dbg_check(false);
     }
 #else
     DeliverEvent(ev, spec);
@@ -77,10 +80,9 @@ void PostAsyncEvent(u32 ev, u32 spec) {
 }
 
 void DeliverAsyncEvent() {
-    // Before we deliver event, mark async command as done
-    // Note: it is done before the early return check to not
-    // break the ASYNC_EVENT==0 logic
+#if ASYNC_EVENT == 0
     g_hle->busy_card_info = 0;
+#endif
 
     if (g_hle->async_event_nb == 0)
         return;
@@ -93,6 +95,19 @@ void DeliverAsyncEvent() {
 
     g_hle->async_event_nb = 0; // Just clear the number of event
 
+    // Before we deliver anyc event, mark async command as done
+    for (uint32_t i = 0; i < nb; i++) {
+        if (events[i].port > 0x7FF) {
+            // Invalid port. Clear all bits
+            g_hle->busy_card_info = 0;
+        } else {
+            uint32_t port_flag = (1u << events[i].port);
+            g_hle->busy_card_info &= ~port_flag;
+        }
+    }
+
+    // Note: Delivering Event will updated async command status
+    // (aka busy_card_info)
     for (uint32_t i = 0; i < nb; i++) {
         DeliverEvent(events[i].ev, events[i].spec);
     }
