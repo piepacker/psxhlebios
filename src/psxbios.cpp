@@ -845,7 +845,7 @@ void psxBios_malloc(HLE_BIOS_CALL_ARGS) { // 0x33
 
     // exit on uninitialized heap
     if (chunk == NULL) {
-        printf("malloc %x,%x: Uninitialized Heap!\n", v0, a0);
+        SysErrorPrintf("malloc %x,%x: Uninitialized Heap!", v0, a0);
         v0 = 0;
         pc0 = ra;
         return;
@@ -857,8 +857,7 @@ void psxBios_malloc(HLE_BIOS_CALL_ARGS) { // 0x33
 
             // catch out of memory
             if(chunk >= heap_end) {
-                printf("malloc %x,%x: Out of memory error!\n",
-                    v0, a0);
+                SysErrorPrintf("malloc %x,%x: Out of memory error!", v0, a0);
                 v0 = 0; pc0 = ra;
                 return;
             }
@@ -1056,7 +1055,7 @@ _start:
             if (j > t2len-2) {
                 tmp2[j] = 0;
                 //raw_puts(tmp2);
-                fprintf(stderr, "Funky printf formatting at 0x%06x, msg=%s\n", a0 & PS1_SegmentAddrMask, fmt);
+                SysErrorPrintf("Funky printf formatting at 0x%06x, msg=%s", a0 & PS1_SegmentAddrMask, fmt);
                 continue;   // resume processing.
             }
 
@@ -1107,7 +1106,7 @@ _start:
                 break;
 
                 case '%':
-                    fprintf(stderr, "Funky printf formatting at 0x%06x, msg=%s\n", a0 & PS1_SegmentAddrMask, fmt);
+                    SysErrorPrintf("Funky printf formatting at 0x%06x, msg=%s", a0 & PS1_SegmentAddrMask, fmt);
                 break;
             }
             i++;
@@ -3267,7 +3266,7 @@ void psxBiosLoadExecCdrom() {
                         exepath = rvalue;
                     }
                     else {
-                        printf("[ERROR]: SYSTEM.CNF: BOOT lvalue does not have a valid rvalue.\n");
+                        SysErrorPrintf("SYSTEM.CNF: BOOT lvalue does not have a valid rvalue.\n");
                     }
 
                     // this shouldn't really ever happen so let's assert by default in debug builds.
@@ -3288,7 +3287,7 @@ void psxBiosLoadExecCdrom() {
         }
     }
     else {
-        printf("[INFO]: SYSTEM.CNF not found. Falling back on PSX.EXE...\n");
+        SysErrorPrintf("SYSTEM.CNF not found. Falling back on PSX.EXE...\n");
     }
 
     // TCB/Event size can be updated by system;cnf setting
@@ -3385,7 +3384,7 @@ void psxBiosLoadExecCdrom() {
         intmax_t text_addr = tdesc.t_addr & 0x1fffffff;
         intmax_t text_size = tdesc.t_size;
         auto* ramdest = PSXM(text_addr);
-        printf("(hlebios) reading %jd (%08jX) bytes into addr %08jx (host @ %p)\n", JFMT(text_size), JFMT(text_size), text_addr, ramdest);
+        SysPrintf("(hlebios) reading %jd (%08jX) bytes into addr %08jx (host @ %p)\n", JFMT(text_size), JFMT(text_size), text_addr, ramdest);
         if (psxFs_ReadSectorData2048(ramdest, sector+1, (text_size + 2047) / 2048) == 0) {
             dbg_abort("ReadSectorData failed!");
         }
@@ -3397,7 +3396,7 @@ void psxBiosLoadExecCdrom() {
         if (0) {
             auto* insnptr = (uint32_t*)ramdest;
             for (int i=0; i<text_size; i+=4) {
-                printf( "[MIPS] %06jx:%08jx %s\n", JFMT(text_addr) + i, JFMT((uint32_t&)ramdest[i]), DisassembleMIPS(text_addr + i, (uint32_t&)ramdest[i]).c_str());
+                SysPrintf( "[MIPS] %06jx:%08jx %s\n", JFMT(text_addr) + i, JFMT((uint32_t&)ramdest[i]), DisassembleMIPS(text_addr + i, (uint32_t&)ramdest[i]).c_str());
             }
         }
 #endif
@@ -3407,16 +3406,16 @@ void psxBiosLoadExecCdrom() {
         sp  = tdesc.s_addr ? tdesc.s_addr : 0x801fff00;
         g_hle->initial_sp = sp; // For getConf
 
-        printf("(hlebios) pc0   = %08X\n", pc0);
-        printf("(hlebios) gp    = %08X\n", gp);
-        printf("(hlebios) sp    = %08X\n", sp);
+        SysPrintf("(hlebios) pc0   = %08X\n", pc0);
+        SysPrintf("(hlebios) gp    = %08X\n", gp);
+        SysPrintf("(hlebios) sp    = %08X\n", sp);
 
         CP0_STATUS &= ~(1ull << 22);	// BEV  (bootstrap)
         CP0_STATUS |=  (7ull << 28);   // enable COP0,1,2
         dbg_check((CP0_STATUS & (1<<31)) == 0);
     }
     else {
-        printf("[ERROR]: Failed to load boot executable: %s\n", exedata);
+        SysErrorPrintf("Failed to load boot executable: %s\n", exedata);
     }
 }
 
