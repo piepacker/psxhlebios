@@ -69,22 +69,20 @@
 #undef SysErrorPrintf
 
 #if HLE_DUCKSTATION_IFC
-#define SysPrintf(fmt, ...)      (Log_VerbosePrintf(fmt, ##__VA_ARGS__))
-#define SysErrorPrintf(fmt, ...) (Log_ErrorPrintf(fmt, ##__VA_ARGS__))
+#define SysErrorPrintf(fmt, ...)    Log_ErrorPrintf(fmt, ##__VA_ARGS__)
+#define SysPrintf(fmt, ...)         Log_VerbosePrintf(fmt, ##__VA_ARGS__)
+#define PSXBIOS_LOG(fmt, ...)       Log_VerbosePrintf(fmt, ##__VA_ARGS__)
+#define PSXBIOS_LOG_SPAM(fmt, ...)  Log_DebugPrintf(fmt, ##__VA_ARGS__)
 #endif
 
 #if !defined(PSXBIOS_LOG)
 #   define PSXBIOS_LOG(fmt, ...) (printf("[HLEBIOS] " fmt "\n", ##__VA_ARGS__), fflush(nullptr))
-//#   define PSXBIOS_LOG(...) (void(0))
 #endif
 
-// new psxbios with signature matching PSXBIOS_LOG_SPAM.
-#if !defined(PSXBIOS_LOG_NEW)
-#   define PSXBIOS_LOG_NEW(func, ...) (printf("[HLEBIOS] " func "\n", ## __VA_ARGS__), fflush(nullptr))
-#endif
-
+// By default, same as PSXBIOS_LOG, let's rely on emulator logging infra to differentiate
+// the level
 #if !defined(PSXBIOS_LOG_SPAM)
-#   define PSXBIOS_LOG_SPAM(func, ...) ( !is_suppressed(func) && (printf("[HLEBIOS] " func "\n", ##__VA_ARGS__), fflush(nullptr), 1))
+#   define PSXBIOS_LOG(fmt, ...) (printf("[HLEBIOS] " fmt "\n", ##__VA_ARGS__), fflush(nullptr))
 #endif
 
 #if !defined(SysPrintf)

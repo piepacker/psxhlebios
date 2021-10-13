@@ -74,13 +74,6 @@ const u32 ROM_HLE_STATE     = 0x01000;
 const u32 ROM_FONT_8140     = 0x66000;
 const u32 ROM_FONT_889F     = 0x69d68;
 
-static bool s_suppress_spam = 0;
-static std::map<std::string, int> s_repeat_supress;
-
-static bool is_suppressed(const char* check) {
-    return s_suppress_spam && (++s_repeat_supress[check] > 2);
-};
-
 HleState* g_hle;
 
 // oh silly PCSX. they did the classic VM nono and just recursively called the interpreter
@@ -1022,7 +1015,7 @@ void psxBios_puts(HLE_BIOS_CALL_ARGS) { // 3e/3f
 }
 
 void psxBios_printf(HLE_BIOS_CALL_ARGS) { // 0x3f
-    PSXBIOS_LOG_NEW("printf");
+    PSXBIOS_LOG("printf");
     const int t2len = 64;
     char tmp2[t2len];
     char ptmp[512];      // FIXME: remove this and replace with StringUtila nd format directly into std string.
@@ -1123,7 +1116,7 @@ _start:
 }
 
 void psxBios_format(HLE_BIOS_CALL_ARGS) { // 0x41
-    PSXBIOS_LOG_NEW("format");
+    PSXBIOS_LOG("format");
     // TO BE tested on PCSX
     if (strcmp(Ra0, "bu00:") == 0 && /*Config.Mcd1[0] != '\0'*/ VmcEnabled(0))
     {
@@ -1860,7 +1853,7 @@ void psxBios_ChangeClearPad(HLE_BIOS_CALL_ARGS) { // 5b
 }
 
 void psxBios_ReturnFromException(HLE_BIOS_CALL_ARGS) { // 17
-    //PSXBIOS_LOG_SPAM("ReturnFromException", "DSlot=%d EPC=%08x", ((CP0_CAUSE >> 31) & 1), CP0_EPC);
+    PSXBIOS_LOG_SPAM("ReturnFromException: DSlot=%d EPC=%08x", ((CP0_CAUSE >> 31) & 1), CP0_EPC);
 
     restoreContextException();
 
@@ -3683,19 +3676,7 @@ bool psxbios_invoke_any(u32 callTableId, const HLE_BIOS_TABLE& table, const char
         // a trace for calls that are being made to unimplemented functions.
         // Traces for implemented functions are handled by the functions, to allow them to add their own clever/useful info.
         if (const char* name = names[call]) {
-            auto my_suppress = [name](const char* check) {
-                if (strcmp(name, check)) return false;
-                return is_suppressed(check);
-            };
-            // filter out some very spammy calls.
-            if (!s_suppress_spam ||
-                   ((!my_suppress("putchar"               ))
-                &&  (!my_suppress("strlen"                ))
-                &&  (!my_suppress("ReturnFromExecption"   ))
-                &&  (!my_suppress("TestEvent"             ))
-            )){
-                PSXBIOS_LOG("callfunc %s", names[call]);
-            }
+            PSXBIOS_LOG("callfunc %s", names[call]);
         }
     }
 

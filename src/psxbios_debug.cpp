@@ -1,6 +1,10 @@
 #include "psxhle-emu-ifc.h"
 #include "psdisc-endian.h"
 
+#if HLE_DUCKSTATION_IFC
+Log_SetChannel(HLEBIOS);
+#endif
+
 const char * const biosA0n[256] = {
 // 0x00
     "open",		"lseek",	"read",		"write",
