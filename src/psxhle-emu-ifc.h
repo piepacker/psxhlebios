@@ -65,18 +65,34 @@
 #   define HLE_ENABLE_YIELD     0
 #endif
 
+#undef SysPrintf
+#undef SysErrorPrintf
+
+#if HLE_DUCKSTATION_IFC
+#define SysPrintf(fmt, ...)      (Log_VerbosePrintf(fmt, ##__VA_ARGS__))
+#define SysErrorPrintf(fmt, ...) (Log_ErrorPrintf(fmt, ##__VA_ARGS__))
+#endif
+
 #if !defined(PSXBIOS_LOG)
-#   define PSXBIOS_LOG(...) (printf("[HLEBIOS] " __VA_ARGS__), fflush(nullptr))
+#   define PSXBIOS_LOG(fmt, ...) (printf("[HLEBIOS] " fmt "\n", ##__VA_ARGS__), fflush(nullptr))
 //#   define PSXBIOS_LOG(...) (void(0))
 #endif
 
 // new psxbios with signature matching PSXBIOS_LOG_SPAM.
 #if !defined(PSXBIOS_LOG_NEW)
-#   define PSXBIOS_LOG_NEW(func, ...) (printf("[HLEBIOS] " func " " __VA_ARGS__), fflush(nullptr))
+#   define PSXBIOS_LOG_NEW(func, ...) (printf("[HLEBIOS] " func "\n", ## __VA_ARGS__), fflush(nullptr))
 #endif
 
 #if !defined(PSXBIOS_LOG_SPAM)
-#   define PSXBIOS_LOG_SPAM(func, ...) ( !is_suppressed(func) && (printf("[HLEBIOS] " func " " __VA_ARGS__), fflush(nullptr), 1))
+#   define PSXBIOS_LOG_SPAM(func, ...) ( !is_suppressed(func) && (printf("[HLEBIOS] " func "\n", ##__VA_ARGS__), fflush(nullptr), 1))
+#endif
+
+#if !defined(SysPrintf)
+#   define SysPrintf(fmt, ...)      (printf(fmt "\n", ##__VA_ARGS__), fflush(stdout))
+#endif
+
+#if !defined(SysErrorPrintf)
+#   define SysErrorPrintf(fmt, ...) (printf(fmt "\n", ##__VA_ARGS__), fflush(stdout))
 #endif
 
 #if HLE_PCSX_IFC

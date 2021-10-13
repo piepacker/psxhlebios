@@ -54,6 +54,10 @@
 #   include <zlib.h>
 #endif
 
+#if HLE_DUCKSTATION_IFC
+Log_SetChannel(HLEBIOS);
+#endif
+
 // Default value of internal structure size
 u32 PCB_MAX                   = 1;
 u32 TCB_MAX                   = 4;
@@ -89,11 +93,11 @@ HleState* g_hle;
 uint8_t hleSoftCall = 0;
 
 void softCall(u32 pc) {
-    //PSXBIOS_LOG("softCall %x:%x\n", pc, ra);
+    //PSXBIOS_LOG("softCall %x:%x", pc, ra);
     u32 sra = ra;
     HleExecuteRecursive(pc, kSoftCallBaseRetAddr);
     ra = sra;
-    //PSXBIOS_LOG("end softCall\n");
+    //PSXBIOS_LOG("end softCall");
 }
 
 const u32 CP0_MODE_MASK     = 0x3F;
@@ -124,7 +128,7 @@ static inline void INTERNAL_CP0_EXIT_CRITICAL_SECTION() {
 void psxBios_todigit(HLE_BIOS_CALL_ARGS) { // 0x0a
     int c = a0;
 
-    PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x0a]);
+    PSXBIOS_LOG("psxBios_%s", biosA0n[0x0a]);
 
     c &= 0xFF;
     if (c >= 0x30 && c < 0x3A) {
@@ -186,7 +190,7 @@ void psxBios_setjmp(HLE_BIOS_CALL_ARGS) { // 0x13
     u32 *jmp_buf = (u32 *)Ra0;
     int i;
 
-    PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x13]);
+    PSXBIOS_LOG("psxBios_%s", biosA0n[0x13]);
 
     jmp_buf[0] = ra;
     jmp_buf[1] = sp;
@@ -202,7 +206,7 @@ void psxBios_longjmp(HLE_BIOS_CALL_ARGS) { // 0x14
     u32 *jmp_buf = (u32 *)Ra0;
     int i;
 
-    PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x14]);
+    PSXBIOS_LOG("psxBios_%s", biosA0n[0x14]);
 
     ra = jmp_buf[0]; /* ra */
     sp = jmp_buf[1]; /* sp */
@@ -217,7 +221,7 @@ void psxBios_longjmp(HLE_BIOS_CALL_ARGS) { // 0x14
 void psxBios_strcat(HLE_BIOS_CALL_ARGS) { // 0x15
     char *p1 = (char *)Ra0, *p2 = (char *)Ra1;
 
-    PSXBIOS_LOG("psxBios_%s: %s, %s\n", biosA0n[0x15], Ra0, Ra1);
+    PSXBIOS_LOG("psxBios_%s: %s, %s", biosA0n[0x15], Ra0, Ra1);
 
     if (!a0 || !a1) {
         v0 = 0;
@@ -236,7 +240,7 @@ void psxBios_strncat(HLE_BIOS_CALL_ARGS) { // 0x16
     char *p1 = (char *)Ra0, *p2 = (char *)Ra1;
     s32 n = a2;
 
-    PSXBIOS_LOG("psxBios_%s: %s (%x), %s (%x), %d\n", biosA0n[0x16], Ra0, a0, Ra1, a1, a2);
+    PSXBIOS_LOG("psxBios_%s: %s (%x), %s (%x), %d", biosA0n[0x16], Ra0, a0, Ra1, a1, a2);
 
     if (!a0 || !a1) {
         v0 = 0;
@@ -259,7 +263,7 @@ void psxBios_strncat(HLE_BIOS_CALL_ARGS) { // 0x16
 void psxBios_strcmp(HLE_BIOS_CALL_ARGS) { // 0x17
     char *p1 = (char *)Ra0, *p2 = (char *)Ra1;
 
-    PSXBIOS_LOG("psxBios_%s: %s (%x), %s (%x)\n", biosA0n[0x17], Ra0, a0, Ra1, a1);
+    PSXBIOS_LOG("psxBios_%s: %s (%x), %s (%x)", biosA0n[0x17], Ra0, a0, Ra1, a1);
 
     if (a0 == 0 && a1 == 0)
     {
@@ -302,7 +306,7 @@ void psxBios_strcmp(HLE_BIOS_CALL_ARGS) { // 0x17
 
 void psxBios_strncmp(HLE_BIOS_CALL_ARGS) { // 0x18
 
-    PSXBIOS_LOG("psxBios_%s: %s (%x), %s (%x), %d\n", biosA0n[0x18], Ra0, a0, Ra1, a1, a2);
+    PSXBIOS_LOG("psxBios_%s: %s (%x), %s (%x), %d", biosA0n[0x18], Ra0, a0, Ra1, a1, a2);
 
     if (a0 == 0 && a1 == 0)
     {
@@ -383,7 +387,7 @@ void psxBios_strncpy(HLE_BIOS_CALL_ARGS) { // 0x1a
 }
 
 void psxBios_strlen(HLE_BIOS_CALL_ARGS) { // 0x1b
-    //PSXBIOS_LOG("psxBios_%s: %s (%x)\n", biosA0n[0x1b], Ra0, a0);
+    //PSXBIOS_LOG("psxBios_%s: %s (%x)", biosA0n[0x1b], Ra0, a0);
 
     if (a0) {
         char *p = Ra0;
@@ -530,7 +534,7 @@ void psxBios_bcopy(HLE_BIOS_CALL_ARGS) { // 0x27
 }
 
 void psxBios_bzero(HLE_BIOS_CALL_ARGS) { // 0x28
-    //PSXBIOS_LOG("psxBios_%s: %x %x\n", biosA0n[0x28], a0, a1);
+    //PSXBIOS_LOG("psxBios_%s: %x %x", biosA0n[0x28], a0, a1);
 
     char *p = (char *)Ra0;
     v0 = a0;
@@ -784,7 +788,7 @@ void psxBios_malloc(HLE_BIOS_CALL_ARGS) { // 0x33
     u32 *chunk, *newchunk = NULL;
     u32 dsize = 0, csize, cstat;
     int colflag;
-    PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x33]);
+    PSXBIOS_LOG("psxBios_%s", biosA0n[0x33]);
 
     if (!a0 || (!g_hle->heap_size || !g_hle->heap_addr)) {
         v0 = 0;
@@ -880,15 +884,15 @@ void psxBios_malloc(HLE_BIOS_CALL_ARGS) { // 0x33
     // return pointer to allocated memory
     v0 = ((sptr)chunk - (sptr)PSX_RAM_START) + 4;
     v0|= 0x80000000;
-    SysPrintf("malloc %x, size %x\n", v0, a0);
+    SysPrintf("malloc %x, size %x", v0, a0);
     pc0 = ra;
 }
 
 void psxBios_free(HLE_BIOS_CALL_ARGS) { // 0x34
 
-    PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x34]);
+    PSXBIOS_LOG("psxBios_%s", biosA0n[0x34]);
 
-    SysPrintf("free %x: %x bytes\n", a0, *(u32*)(Ra0-4));
+    SysPrintf("free %x: %x bytes", a0, *(u32*)(Ra0-4));
 
     if (a0) {
         *(u32*)(Ra0-4) |= 1;	// set chunk to free
@@ -898,7 +902,7 @@ void psxBios_free(HLE_BIOS_CALL_ARGS) { // 0x34
 
 void psxBios_calloc(HLE_BIOS_CALL_ARGS) { // 0x37
     void *pv0;
-    PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x37]);
+    PSXBIOS_LOG("psxBios_%s", biosA0n[0x37]);
 
     a0 = a0 * a1;
     psxBios_malloc(HLE_BIOS_INVOKE_ARGS);
@@ -911,7 +915,7 @@ void psxBios_realloc(HLE_BIOS_CALL_ARGS) { // 0x38
     u32 block = a0;
     u32 size = a1;
 
-    PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x38]);
+    PSXBIOS_LOG("psxBios_%s", biosA0n[0x38]);
 
     a0 = block;
     /* If "old_buf" is zero, executes malloc(new_size), and returns r2=new_buf (or 0=failed). */
@@ -938,7 +942,7 @@ void psxBios_realloc(HLE_BIOS_CALL_ARGS) { // 0x38
 void psxBios_InitHeap(HLE_BIOS_CALL_ARGS) { // 0x39
     unsigned int size;
 
-    PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x39]);
+    PSXBIOS_LOG("psxBios_%s", biosA0n[0x39]);
 
     if (((a0 & 0x1fffff) + a1)>= 0x200000) size = 0x1ffffc - (a0 & 0x1fffff);
     else size = a1;
@@ -950,7 +954,7 @@ void psxBios_InitHeap(HLE_BIOS_CALL_ARGS) { // 0x39
     /* HACKFIX: Commenting out this line fixes GTA2 crash */
     //StoreToLE(*heap_addr, size | 1);
 
-    SysPrintf("InitHeap %x,%x : %x %x\n",a0,a1, (int)((uptr)PSXM(g_hle->heap_addr)-(uptr)PSX_RAM_START), size);
+    SysPrintf("InitHeap %x,%x : %x %x",a0,a1, (int)((uptr)PSXM(g_hle->heap_addr)-(uptr)PSX_RAM_START), size);
 
     pc0 = ra;
 }
@@ -966,7 +970,7 @@ static std::string stdoutbuf;
 static void raw_putc(char c) {
     if (c == '\n') {
         if (!stdoutbuf.empty()) {
-            SysPrintf("STDOUT: %s\n", stdoutbuf.c_str());
+            SysPrintf("STDOUT: %s", stdoutbuf.c_str());
         }
 
         stdoutbuf.clear();
@@ -983,7 +987,7 @@ static void raw_puts(const char* cstr) {
 
     if (!cstr[0]) {
         // game putting out an intentionally-blank line
-        SysPrintf("STDOUT: \n");
+        SysPrintf("STDOUT: ");
         return;
     }
     for(const char* eol = cstr; eol[0]; ++eol) {
@@ -991,7 +995,7 @@ static void raw_puts(const char* cstr) {
             // ignore 'em
         }
         else if (eol[0] == '\n') {
-            SysPrintf("STDOUT: %s\n", stdoutbuf.c_str());
+            SysPrintf("STDOUT: %s", stdoutbuf.c_str());
             stdoutbuf.clear();
         }
         else {
@@ -1147,7 +1151,7 @@ void psxBios_Exec(HLE_BIOS_CALL_ARGS) { // 43
     auto header = (EXEC_DESCRIPTOR*)Ra0;
     u32 tmp;
 
-    PSXBIOS_LOG("psxBios_%s: %x, %x, %x\n", biosA0n[0x43], a0, a1, a2);
+    PSXBIOS_LOG("psxBios_%s: %x, %x, %x", biosA0n[0x43], a0, a1, a2);
 
     header->SavedSP = sp;
     header->SavedFP = fp;
@@ -1177,7 +1181,7 @@ void psxBios_Exec(HLE_BIOS_CALL_ARGS) { // 43
 static void psxBios_ExecRet() {
     auto header = (EXEC_DESCRIPTOR*)PSXM(s0);
 
-    PSXBIOS_LOG("psxBios_ExecRet %x: %x\n", s0, header->SavedRA);
+    PSXBIOS_LOG("psxBios_ExecRet %x: %x", s0, header->SavedRA);
 
     ra = header->SavedRA;
     sp = header->SavedSP;
@@ -1196,7 +1200,7 @@ extern intmax_t     psxFs_GetFileSize(const char* path);
 extern bool         psxFs_ReadSectorData2048(void* dest,  psdisc_sec_t sector, int nSectors=1);
 
 void psxBios_Load(HLE_BIOS_CALL_ARGS) { // 0x42
-    PSXBIOS_LOG("psxBios_%s: %s, %x\n", biosA0n[0x42], Ra0, a1);
+    PSXBIOS_LOG("psxBios_%s: %s, %x", biosA0n[0x42], Ra0, a1);
 
     static_assert((sizeof(EXEC_DESCRIPTOR) + sizeof(PSX_EXE_HEADER)) == 76);
 
@@ -1235,7 +1239,7 @@ void psxBios_LoadExec(HLE_BIOS_CALL_ARGS) { // 51
     auto header = (EXEC_DESCRIPTOR*)PSXM(0xf000);
     u32 s_addr, s_size;
 
-    PSXBIOS_LOG("psxBios_%s: %s: %x,%x\n", biosA0n[0x51], Ra0, a1, a2);
+    PSXBIOS_LOG("psxBios_%s: %s: %x,%x", biosA0n[0x51], Ra0, a1, a2);
     s_addr = a1; s_size = a2;
 
     a1 = 0xf000;
@@ -1249,7 +1253,7 @@ void psxBios_LoadExec(HLE_BIOS_CALL_ARGS) { // 51
 }
 
 void psxBios_FlushCache(HLE_BIOS_CALL_ARGS) { // 44
-    PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x44]);
+    PSXBIOS_LOG("psxBios_%s", biosA0n[0x44]);
 
     // Code is updated in RAM, tell the emulator to flush everything
     ClearAllCaches();
@@ -1286,7 +1290,7 @@ void psxBios_GPU_dw(HLE_BIOS_CALL_ARGS) { // 0x46
     int size;
     s32 *ptr;
 
-    PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x46]);
+    PSXBIOS_LOG("psxBios_%s", biosA0n[0x46]);
 
     GPU_W_DATA(0xa0000000);
     GPU_W_DATA((a1<<16)|(a0&0xffff));
@@ -1374,7 +1378,7 @@ void psxBios_get_cd_status(HLE_BIOS_CALL_ARGS) //a6
 }
 
 void psxBios__bu_init(HLE_BIOS_CALL_ARGS) { // 70
-    PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x70]);
+    PSXBIOS_LOG("psxBios_%s", biosA0n[0x70]);
 
     // This call shall init the 2 ports. But we send event once, all games boot fine
     // so let's keep this behavior and put an invalid port number
@@ -1399,19 +1403,19 @@ void psxBios__bu_init(HLE_BIOS_CALL_ARGS) { // 70
 }
 
 void psxBios__96_init(HLE_BIOS_CALL_ARGS) { // 71
-    PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x71]);
+    PSXBIOS_LOG("psxBios_%s", biosA0n[0x71]);
 
     pc0 = ra;
 }
 
 void psxBios__96_remove(HLE_BIOS_CALL_ARGS) { // 72
-    PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x72]);
+    PSXBIOS_LOG("psxBios_%s", biosA0n[0x72]);
 
     pc0 = ra;
 }
 
 void psxBios_SetConf(HLE_BIOS_CALL_ARGS) { // 9c
-    PSXBIOS_LOG("psxBios_%s: %x, %x, %x\n", biosA0n[0x9c], a0, a1, a2);
+    PSXBIOS_LOG("psxBios_%s: %x, %x, %x", biosA0n[0x9c], a0, a1, a2);
 
     EVCB_MAX = a0;
     TCB_MAX = a1;
@@ -1423,7 +1427,7 @@ void psxBios_SetConf(HLE_BIOS_CALL_ARGS) { // 9c
 }
 
 void psxBios_GetConf(HLE_BIOS_CALL_ARGS) { // 9d
-    PSXBIOS_LOG("psxBios_%s: %x, %x, %x\n", biosA0n[0x9d], a0, a1, a2);
+    PSXBIOS_LOG("psxBios_%s: %x, %x, %x", biosA0n[0x9d], a0, a1, a2);
 
     StoreToLE(psxMu32ref(a0), EVCB_MAX);
     StoreToLE(psxMu32ref(a1), TCB_MAX);
@@ -1435,22 +1439,22 @@ void psxBios_GetConf(HLE_BIOS_CALL_ARGS) { // 9d
 void psxBios_SetMem(HLE_BIOS_CALL_ARGS) { // 9f
     u32 nx = Read_MEMCTRL2();
 
-    PSXBIOS_LOG("psxBios_%s: %x, %x\n", biosA0n[0x9f], a0, a1);
+    PSXBIOS_LOG("psxBios_%s: %x, %x", biosA0n[0x9f], a0, a1);
 
     switch(a0) {
         case 2:
             Write_MEMCTRL2(nx);
             psxMu32ref(0x060) = a0;
-            SysPrintf("Change effective memory : %d MBytes\n",a0);
+            SysPrintf("Change effective memory : %d MBytes",a0);
             break;
 
         case 8:
             Write_MEMCTRL2(nx | 0x300);
             psxMu32ref(0x060) = a0;
-            SysPrintf("Change effective memory : %d MBytes\n",a0);
-    
+            SysPrintf("Change effective memory : %d MBytes",a0);
+
         default:
-            SysPrintf("Effective memory must be 2/8 MBytes\n");
+            SysPrintf("Effective memory must be 2/8 MBytes");
         break;
     }
 
@@ -1458,13 +1462,13 @@ void psxBios_SetMem(HLE_BIOS_CALL_ARGS) { // 9f
 }
 
 void psxBios__card_info(HLE_BIOS_CALL_ARGS) { // ab
-    PSXBIOS_LOG("psxBios_%s: %x\n", biosA0n[0xab], a0);
+    PSXBIOS_LOG("psxBios_%s: %x", biosA0n[0xab], a0);
 
     uint16_t port = a0 >> 4;
     uint32_t port_flag = (1u << port);
 
     if (g_hle->busy_card_info & port_flag) {
-        SysPrintf("pending card_info, failed to register new cmd\n");
+        SysErrorPrintf("pending card_info, failed to register new cmd");
         v0 = 0;
         pc0 = ra;
         return;
@@ -1482,7 +1486,7 @@ void psxBios__card_info(HLE_BIOS_CALL_ARGS) { // ab
             ret = 0x8;
         break;
     default:
-        PSXBIOS_LOG("psxBios_%s: UNKNOWN PORT 0x%x\n", biosA0n[0xab], g_hle->card_active_chan);
+        PSXBIOS_LOG("psxBios_%s: UNKNOWN PORT 0x%x", biosA0n[0xab], g_hle->card_active_chan);
         ret = 0x11;
         break;
     }
@@ -1499,7 +1503,7 @@ void psxBios__card_info(HLE_BIOS_CALL_ARGS) { // ab
 }
 
 void psxBios__card_load(HLE_BIOS_CALL_ARGS) { // ac
-    PSXBIOS_LOG("psxBios_%s: %x\n", biosA0n[0xac], a0);
+    PSXBIOS_LOG("psxBios_%s: %x", biosA0n[0xac], a0);
 
     g_hle->card_active_chan = a0;
     uint16_t port = g_hle->card_active_chan >> 4;
@@ -1514,7 +1518,7 @@ void psxBios__card_load(HLE_BIOS_CALL_ARGS) { // ac
 }
 
 void psxBios__card_auto(HLE_BIOS_CALL_ARGS) { // 0xAD
-    PSXBIOS_LOG("psxBios_%s\n", biosA0n[0xAD]);
+    PSXBIOS_LOG("psxBios_%s", biosA0n[0xAD]);
 
     pc0 = ra;
 }
@@ -1532,7 +1536,7 @@ void psxBios_SysMalloc(HLE_BIOS_CALL_ARGS) { // 00
     g_hle->kheap_addr += aligned_size;
     g_hle->kheap_size -= aligned_size;
 
-    PSXBIOS_LOG("psxBios_%s 0x%x => %x\n", biosB0n[0x00], a0, v0);
+    PSXBIOS_LOG("psxBios_%s 0x%x => %x", biosB0n[0x00], a0, v0);
 
     // Let's avoid surprise
     memset(PSXM(v0), 0, aligned_size);
@@ -1541,7 +1545,7 @@ void psxBios_SysMalloc(HLE_BIOS_CALL_ARGS) { // 00
 }
 
 void psxBios_SetRCnt(HLE_BIOS_CALL_ARGS) { // 02
-    PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x02]);
+    PSXBIOS_LOG("psxBios_%s", biosB0n[0x02]);
 
     a0&= 0x3;
     if (a0 != 3) {
@@ -1560,7 +1564,7 @@ void psxBios_SetRCnt(HLE_BIOS_CALL_ARGS) { // 02
 }
 
 void psxBios_GetRCnt(HLE_BIOS_CALL_ARGS) { // 03
-    PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x03]);
+    PSXBIOS_LOG("psxBios_%s", biosB0n[0x03]);
 
     a0&= 0x3;
     v0 = 0;
@@ -1569,7 +1573,7 @@ void psxBios_GetRCnt(HLE_BIOS_CALL_ARGS) { // 03
 }
 
 void psxBios_StartRCnt(HLE_BIOS_CALL_ARGS) { // 04
-    PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x04]);
+    PSXBIOS_LOG("psxBios_%s", biosB0n[0x04]);
 
     a0&= 0x3;
 
@@ -1583,7 +1587,7 @@ void psxBios_StartRCnt(HLE_BIOS_CALL_ARGS) { // 04
 }
 
 void psxBios_StopRCnt(HLE_BIOS_CALL_ARGS) { // 05
-    PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x05]);
+    PSXBIOS_LOG("psxBios_%s", biosB0n[0x05]);
 
     a0&= 0x3;
 
@@ -1596,7 +1600,7 @@ void psxBios_StopRCnt(HLE_BIOS_CALL_ARGS) { // 05
 }
 
 void psxBios_ResetRCnt(HLE_BIOS_CALL_ARGS) { // 06
-    PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x06]);
+    PSXBIOS_LOG("psxBios_%s", biosB0n[0x06]);
 
     a0&= 0x3;
     if (a0 != 3) {
@@ -1610,7 +1614,7 @@ void psxBios_ResetRCnt(HLE_BIOS_CALL_ARGS) { // 06
 void psxBios_ChangeClearRCnt(HLE_BIOS_CALL_ARGS) { // 0a
     u32 *ptr;
 
-    PSXBIOS_LOG("psxBios_%s: %x, %x\n", biosC0n[0x0a], a0, a1);
+    PSXBIOS_LOG("psxBios_%s: %x, %x", biosC0n[0x0a], a0, a1);
 
     ptr = (u32*)PSXM((a0 << 2) + TIMER_IRQ_AUTO_ACK);
     v0 = *ptr;
@@ -1712,7 +1716,7 @@ static void restoreContextException() {
 void psxBios_OpenTh(HLE_BIOS_CALL_ARGS) { // 0e
     u32 tcb_max = LoadFromLE(psxMu32ref(G_THREADS_SIZE)) / SIZEOF_TCB;
     if (tcb_max != TCB_MAX) {
-        PSXBIOS_LOG("psxBios_OpenTh() WARNING! max threads was updated from %d to %d\n", TCB_MAX, tcb_max);
+        PSXBIOS_LOG("psxBios_OpenTh() WARNING! max threads was updated from %d to %d", TCB_MAX, tcb_max);
         TCB_MAX = tcb_max;
     }
 
@@ -1727,12 +1731,12 @@ void psxBios_OpenTh(HLE_BIOS_CALL_ARGS) { // 0e
     if (th == TCB_MAX) {
         // Feb 2019 - Added out-of-bounds fix caught by cppcheck:
         // When no free TCB is found, return 0xffffffff according to Nocash doc.
-        PSXBIOS_LOG("psxBios_OpenTh() WARNING! No Free TCBs found!\n");
+        PSXBIOS_LOG("psxBios_OpenTh() WARNING! No Free TCBs found!");
         v0 = 0xffffffff;
         pc0 = ra;
         return;
     }
-    PSXBIOS_LOG("psxBios_%s: 0x%x (%d) (func:0x%x)\n", biosB0n[0x0e], tcb, th, a0);
+    PSXBIOS_LOG("psxBios_%s: 0x%x (%d) (func:0x%x)", biosB0n[0x0e], tcb, th, a0);
 
     // Reserve the thread
     auto context = (u32*)PSXM(tcb & PS1_SegmentAddrMask);
@@ -1760,7 +1764,7 @@ void psxBios_CloseTh(HLE_BIOS_CALL_ARGS) { // 0f
     // And mark current thread as free
     StoreToLE(psxMu32ref(tcb), TCB_THREAD_FREE);
 
-    PSXBIOS_LOG("psxBios_%s: 0x%x (%d)\n", biosB0n[0x0f], tcb, th);
+    PSXBIOS_LOG("psxBios_%s: 0x%x (%d)", biosB0n[0x0f], tcb, th);
 
     /* The return value is always 1 (even if the handle was already closed). */
     v0 = 1;
@@ -1790,11 +1794,11 @@ void psxBios_ChangeTh(HLE_BIOS_CALL_ARGS) { // 10
     // Save the new current thread
     psxMu32ref(pcb) = tcb | PS1_KernelSegment;
 
-    PSXBIOS_LOG("psxBios_%s: from %x to %x\n", biosB0n[0x10], tcb_current, tcb);
+    PSXBIOS_LOG("psxBios_%s: from %x to %x", biosB0n[0x10], tcb_current, tcb);
 }
 
 void psxBios_InitPAD(HLE_BIOS_CALL_ARGS) { // 0x12
-    PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x12]);
+    PSXBIOS_LOG("psxBios_%s", biosB0n[0x12]);
 
     g_hle->pad_buf = 0; // Fix bushido blade 2
 
@@ -1807,7 +1811,7 @@ void psxBios_InitPAD(HLE_BIOS_CALL_ARGS) { // 0x12
 }
 
 void psxBios_StartPAD(HLE_BIOS_CALL_ARGS) { // 13
-    PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x13]);
+    PSXBIOS_LOG("psxBios_%s", biosB0n[0x13]);
 
     g_hle->pad_started = 1;
     Write_IMASK((unsigned short)(Read_IMASK() | 0x1));
@@ -1818,7 +1822,7 @@ void psxBios_StartPAD(HLE_BIOS_CALL_ARGS) { // 13
 }
 
 void psxBios_StopPAD(HLE_BIOS_CALL_ARGS) { // 14
-    PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x14]);
+    PSXBIOS_LOG("psxBios_%s", biosB0n[0x14]);
 
     g_hle->pad_started = 0;
     g_hle->pad_buf1 = 0;
@@ -1827,7 +1831,7 @@ void psxBios_StopPAD(HLE_BIOS_CALL_ARGS) { // 14
 }
 
 void psxBios_PAD_init(HLE_BIOS_CALL_ARGS) { // 15
-    PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x15]);
+    PSXBIOS_LOG("psxBios_%s", biosB0n[0x15]);
 
     if (!(a0 == 0x20000000 || a0 == 0x20000001))
     {
@@ -1845,19 +1849,19 @@ void psxBios_PAD_init(HLE_BIOS_CALL_ARGS) { // 15
 }
 
 void psxBios_PAD_dr(HLE_BIOS_CALL_ARGS) { // 16
-    //PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x16]);
+    //PSXBIOS_LOG("psxBios_%s", biosB0n[0x16]);
 
     v0 = -1; pc0 = ra;
 }
 
 void psxBios_ChangeClearPad(HLE_BIOS_CALL_ARGS) { // 5b
-    PSXBIOS_LOG("psxBios_%s: %x\n", biosB0n[0x5b], a0);
+    PSXBIOS_LOG("psxBios_%s: %x", biosB0n[0x5b], a0);
 
     pc0 = ra;
 }
 
 void psxBios_ReturnFromException(HLE_BIOS_CALL_ARGS) { // 17
-    //PSXBIOS_LOG_SPAM("ReturnFromException", "DSlot=%d EPC=%08x\n", ((CP0_CAUSE >> 31) & 1), CP0_EPC);
+    //PSXBIOS_LOG_SPAM("ReturnFromException", "DSlot=%d EPC=%08x", ((CP0_CAUSE >> 31) & 1), CP0_EPC);
 
     restoreContextException();
 
@@ -1869,14 +1873,14 @@ void psxBios_ReturnFromException(HLE_BIOS_CALL_ARGS) { // 17
 }
 
 void psxBios_ResetEntryInt(HLE_BIOS_CALL_ARGS) { // 18
-    PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x18]);
+    PSXBIOS_LOG("psxBios_%s", biosB0n[0x18]);
 
     g_hle->jmp_int = 0;
     pc0 = ra;
 }
 
 void psxBios_HookEntryInt(HLE_BIOS_CALL_ARGS) { // 19
-    PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x19]);
+    PSXBIOS_LOG("psxBios_%s", biosB0n[0x19]);
 
     g_hle->jmp_int = a0;
     pc0 = ra;
@@ -1890,7 +1894,7 @@ void buread(void* ra1, int mcd, int length) {
 
     auto& fd = g_hle->FDesc[1 + mcd];
 
-    SysPrintf("read %d: %x,%x (%s)\n", fd.mcfile, fd.offset, length, mcdraw + 128 * fd.mcfile + 0xa);
+    SysPrintf("read %d: %x,%x (%s)", fd.mcfile, fd.offset, length, mcdraw + 128 * fd.mcfile + 0xa);
     auto* ptr = mcdraw + 8192 * fd.mcfile + fd.offset;
 
     memcpy(ra1, ptr, length);
@@ -1910,7 +1914,7 @@ void buwrite(void* ra1, int mcd, int length) {
     uint16_t port = mcd - 1;
     u32 offset =  + 8192 * g_hle->FDesc[1 + mcd].mcfile + g_hle->FDesc[1 + mcd].offset;
 
-    SysPrintf("write %d: %x,%x\n", g_hle->FDesc[1 + mcd].mcfile, g_hle->FDesc[1 + mcd].offset, length);
+    SysPrintf("write %d: %x,%x", g_hle->FDesc[1 + mcd].mcfile, g_hle->FDesc[1 + mcd].offset, length);
 
     VmcWriteNV(mcd -1, offset, ra1, length);
 
@@ -1944,7 +1948,7 @@ static void buopen(int mcd)
         if ((*fptr & 0xF0) != 0x50) continue;
         if (strcmp(g_hle->FDesc[1 + mcd].name, fptr+0xa)) continue;
         g_hle->FDesc[1 + mcd].mcfile = i;
-        SysPrintf("open %s\n", fptr+0xa);
+        SysPrintf("open %s", fptr+0xa);
         v0 = 1 + mcd;
         break;
     }
@@ -1984,7 +1988,7 @@ static void buopen(int mcd)
                 pptr[8] = pptr[9] = 0xff;
                 for (j=0, xorx=0; j<127; j++) xorx^= pptr[j];
                 pptr[127] = xorx;
-                SysPrintf("openC %s %d\n", ptr, nblk);
+                SysPrintf("openC %s %d", ptr, nblk);
                 v0 = 1 + mcd;
                 /* just go ahead and resave them all */
                 VmcDirty(mcd - 1);
@@ -2006,7 +2010,7 @@ void psxBios_getc(HLE_BIOS_CALL_ARGS) // 0x03, 0x35
 {
     void *pa1 = Ra1;
 
-    PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x03]);
+    PSXBIOS_LOG("psxBios_%s", biosA0n[0x03]);
 
     v0 = -1;
 
@@ -2025,7 +2029,7 @@ void psxBios_putc(HLE_BIOS_CALL_ARGS) // 0x09, 0x3B
 {
     void *pa1 = Ra1;
 
-    PSXBIOS_LOG("psxBios_%s\n", biosA0n[0x09]);
+    PSXBIOS_LOG("psxBios_%s", biosA0n[0x09]);
     
     v0 = -1;
     if (!pa1) {
@@ -2059,7 +2063,7 @@ void psxBios_putc(HLE_BIOS_CALL_ARGS) // 0x09, 0x3B
 void psxBios_open(HLE_BIOS_CALL_ARGS) { // 0x32
     auto *pa0 = (char*)Ra0;
 
-    PSXBIOS_LOG("psxBios_%s: %s,%x\n", biosB0n[0x32], Ra0, a1);
+    PSXBIOS_LOG("psxBios_%s: %s,%x", biosB0n[0x32], Ra0, a1);
 
     v0 = -1;
 
@@ -2081,7 +2085,7 @@ void psxBios_open(HLE_BIOS_CALL_ARGS) { // 0x32
  */
 
 void psxBios_lseek(HLE_BIOS_CALL_ARGS) { // 0x33
-    PSXBIOS_LOG("psxBios_%s: %x, %x, %x\n", biosB0n[0x33], a0, a1, a2);
+    PSXBIOS_LOG("psxBios_%s: %x, %x, %x", biosB0n[0x33], a0, a1, a2);
 
     switch (a2) {
         case 0: // SEEK_SET
@@ -2105,7 +2109,7 @@ void psxBios_lseek(HLE_BIOS_CALL_ARGS) { // 0x33
 void psxBios_read(HLE_BIOS_CALL_ARGS) { // 0x34
     void *pa1 = Ra1;
 
-    PSXBIOS_LOG("psxBios_%s: %x, %x, %x\n", biosB0n[0x34], a0, a1, a2);
+    PSXBIOS_LOG("psxBios_%s: %x, %x, %x", biosB0n[0x34], a0, a1, a2);
 
     v0 = -1;
 
@@ -2126,7 +2130,7 @@ void psxBios_read(HLE_BIOS_CALL_ARGS) { // 0x34
 void psxBios_write(HLE_BIOS_CALL_ARGS) { // 0x35/0x03
     auto *pa1 = Ra1;
 
-    PSXBIOS_LOG("psxBios_%s: %x,%x,%x\n", biosB0n[0x35], a0, a1, a2);
+    PSXBIOS_LOG("psxBios_%s: %x,%x,%x", biosB0n[0x35], a0, a1, a2);
 
     v0 = -1;
     if (!pa1) {
@@ -2157,7 +2161,7 @@ void psxBios_write(HLE_BIOS_CALL_ARGS) { // 0x35/0x03
  */
 
 void psxBios_close(HLE_BIOS_CALL_ARGS) { // 0x36
-    PSXBIOS_LOG("psxBios_%s: %x\n", biosB0n[0x36], a0);
+    PSXBIOS_LOG("psxBios_%s: %x", biosB0n[0x36], a0);
 
     v0 = a0;
     pc0 = ra;
@@ -2206,7 +2210,7 @@ static void bufile(int mcd_port, u32 _dir) {
             }
             match = 0; break;
         }
-        SysPrintf("%d : %s = %s + %s (match=%d)\n", g_hle->nfile, dir->name, pfile, ptr, match);
+        SysPrintf("%d : %s = %s + %s (match=%d)", g_hle->nfile, dir->name, pfile, ptr, match);
         if (match == 0) { continue; }
         dir->size = 8192;
         v0 = _dir;
@@ -2221,7 +2225,7 @@ static void bufile(int mcd_port, u32 _dir) {
 void psxBios_firstfile(HLE_BIOS_CALL_ARGS) { // 42
     auto *pa0 = Ra0;
 
-    PSXBIOS_LOG("psxBios_%s: %s\n", biosB0n[0x42], Ra0);
+    PSXBIOS_LOG("psxBios_%s: %s", biosB0n[0x42], Ra0);
 
     v0 = 0;
 
@@ -2251,7 +2255,7 @@ void psxBios_firstfile(HLE_BIOS_CALL_ARGS) { // 42
 void psxBios_nextfile(HLE_BIOS_CALL_ARGS) { // 43
     struct DIRENTRY *dir = (struct DIRENTRY *)Ra0;
 
-    PSXBIOS_LOG("psxBios_%s: %s\n", biosB0n[0x43], dir->name);
+    PSXBIOS_LOG("psxBios_%s: %s", biosB0n[0x43], dir->name);
 
     v0 = 0;
 
@@ -2280,7 +2284,7 @@ static void burename(int mcd) {
         int namelen = strlen(Ra1+5);
         memcpy(ptr+0xa, Ra1+5, namelen);
         memset(ptr+0xa+namelen, 0, 0x75-namelen);
-        SysPrintf("rename %116s\n", ptr+0xa);
+        SysPrintf("rename %116s", ptr+0xa);
 
         int xorx = 0;
         for (int j=0; j<127; j++) xorx^= ptr[j];
@@ -2301,7 +2305,7 @@ void psxBios_rename(HLE_BIOS_CALL_ARGS) { // 44
     char *pa0 = Ra0;
     char *pa1 = Ra1;
 
-    PSXBIOS_LOG("psxBios_%s: %s,%s\n", biosB0n[0x44], Ra0, Ra1);
+    PSXBIOS_LOG("psxBios_%s: %s,%s", biosB0n[0x44], Ra0, Ra1);
 
     v0 = 0;
 
@@ -2331,7 +2335,7 @@ static void budelete(int mcd) {
 
         *ptr = (*ptr & 0xf) | 0xA0;
         VmcDirty(mcd - 1);
-        SysPrintf("delete %s\n", ptr+0xa);
+        SysPrintf("delete %s", ptr+0xa);
         v0 = 1;
         break;
     }
@@ -2344,7 +2348,7 @@ static void budelete(int mcd) {
 void psxBios_delete(HLE_BIOS_CALL_ARGS) { // 45
     char *pa0 = Ra0;
 
-    PSXBIOS_LOG("psxBios_%s: %s\n", biosB0n[0x45], Ra0);
+    PSXBIOS_LOG("psxBios_%s: %s", biosB0n[0x45], Ra0);
 
     v0 = 0;
 
@@ -2367,19 +2371,19 @@ void psxBios_delete(HLE_BIOS_CALL_ARGS) { // 45
 
 void psxBios_AddDevice(HLE_BIOS_CALL_ARGS) { // 47
     u32 device = LoadFromLE(psxMu32ref(a0));
-    PSXBIOS_LOG("psxBios_%s: %x (%s)\n", biosB0n[0x47], a0, (char *)PSXM(device));
+    PSXBIOS_LOG("psxBios_%s: %x (%s)", biosB0n[0x47], a0, (char *)PSXM(device));
     // Ridge Racer Type 4 used this function to add a "sio console" device
     // Probably doesn't need more
     pc0 = ra;
 }
 
 void psxBios_RemoveDevice(HLE_BIOS_CALL_ARGS) { // 47
-    PSXBIOS_LOG("psxBios_%s: %x (%s)\n", biosB0n[0x47], a0, Ra0);
+    PSXBIOS_LOG("psxBios_%s: %x (%s)", biosB0n[0x47], a0, Ra0);
     pc0 = ra;
 }
 
 void psxBios_InitCARD(HLE_BIOS_CALL_ARGS) { // 4a
-    PSXBIOS_LOG("psxBios_%s: %x\n", biosB0n[0x4a], a0);
+    PSXBIOS_LOG("psxBios_%s: %x", biosB0n[0x4a], a0);
 
     g_hle->cardState = 0;
     g_hle->pad_started = (a0) ? 1 : 0;
@@ -2388,7 +2392,7 @@ void psxBios_InitCARD(HLE_BIOS_CALL_ARGS) { // 4a
 }
 
 void psxBios_StartCARD(HLE_BIOS_CALL_ARGS) { // 4b
-    PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x4b]);
+    PSXBIOS_LOG("psxBios_%s", biosB0n[0x4b]);
 
     if (g_hle->cardState == 0) g_hle->cardState = 1;
 
@@ -2396,7 +2400,7 @@ void psxBios_StartCARD(HLE_BIOS_CALL_ARGS) { // 4b
 }
 
 void psxBios_StopCARD(HLE_BIOS_CALL_ARGS) { // 4c
-    PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x4c]);
+    PSXBIOS_LOG("psxBios_%s", biosB0n[0x4c]);
 
     if (g_hle->cardState == 1) g_hle->cardState = 0;
 
@@ -2407,7 +2411,7 @@ void psxBios__card_write(HLE_BIOS_CALL_ARGS) { // 0x4e
     void *pa2 = Ra2;
     int port;
 
-    PSXBIOS_LOG("psxBios_%s: %x,%x,%x\n", biosB0n[0x4e], a0, a1, a2);
+    PSXBIOS_LOG("psxBios_%s: %x,%x,%x", biosB0n[0x4e], a0, a1, a2);
     /*
     Function also accepts sector 400h (a bug).
     But notaz said we shouldn't allow sector 400h because it can corrupt the emulator.
@@ -2435,7 +2439,7 @@ void psxBios__card_read(HLE_BIOS_CALL_ARGS) { // 0x4f
     void *pa2 = Ra2;
     int port;
 
-    PSXBIOS_LOG("psxBios_%s %x %x\n", biosB0n[0x4f], a0, a1);
+    PSXBIOS_LOG("psxBios_%s %x %x", biosB0n[0x4f], a0, a1);
 
     /*
     Function also accepts sector 400h (a bug).
@@ -2463,7 +2467,7 @@ void psxBios__card_read(HLE_BIOS_CALL_ARGS) { // 0x4f
 }
 
 void psxBios__new_card(HLE_BIOS_CALL_ARGS) { // 0x50
-    PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x50]);
+    PSXBIOS_LOG("psxBios_%s", biosB0n[0x50]);
 
     pc0 = ra;
 }
@@ -2519,35 +2523,35 @@ void psxBios_Krom2RawAdd(HLE_BIOS_CALL_ARGS) { // 0x51
 }
 
 void psxBios_GetC0Table(HLE_BIOS_CALL_ARGS) { // 56
-    PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x56]);
+    PSXBIOS_LOG("psxBios_%s", biosB0n[0x56]);
 
     v0 = TABLE_C0;
     pc0 = ra;
 }
 
 void psxBios_GetB0Table(HLE_BIOS_CALL_ARGS) { // 57
-    PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x57]);
+    PSXBIOS_LOG("psxBios_%s", biosB0n[0x57]);
 
     v0 = TABLE_B0;
     pc0 = ra;
 }
 
 void psxBios__card_chan(HLE_BIOS_CALL_ARGS) { // 0x58
-    PSXBIOS_LOG("psxBios_%s\n", biosB0n[0x58]);
+    PSXBIOS_LOG("psxBios_%s", biosB0n[0x58]);
 
     v0 = g_hle->card_active_chan;
     pc0 = ra;
 }
 
 void psxBios__card_status(HLE_BIOS_CALL_ARGS) { // 5c
-    PSXBIOS_LOG("psxBios_%s: %x\n", biosB0n[0x5c], a0);
+    PSXBIOS_LOG("psxBios_%s: %x", biosB0n[0x5c], a0);
 
     v0 = 1;
     pc0 = ra;
 }
 
 void psxBios__card_wait(HLE_BIOS_CALL_ARGS) { // 5d
-    PSXBIOS_LOG("psxBios_%s: %x\n", biosB0n[0x5d], a0);
+    PSXBIOS_LOG("psxBios_%s: %x", biosB0n[0x5d], a0);
 
     v0 = 1;
     pc0 = ra;
@@ -2561,7 +2565,7 @@ static void init_timers() {
 }
 
 void psxBios_InitRCnt(HLE_BIOS_CALL_ARGS) { // 00
-    PSXBIOS_LOG("psxBios_%s: %x\n", biosC0n[0x00] ,a0);
+    PSXBIOS_LOG("psxBios_%s: %x", biosC0n[0x00] ,a0);
     init_timers();
 
     v0 = 0;
@@ -2569,7 +2573,7 @@ void psxBios_InitRCnt(HLE_BIOS_CALL_ARGS) { // 00
 }
 
 void psxBios_InitException(HLE_BIOS_CALL_ARGS) { // 01
-    PSXBIOS_LOG("psxBios_%s: %x\n", biosC0n[0x01] ,a0);
+    PSXBIOS_LOG("psxBios_%s: %x", biosC0n[0x01] ,a0);
     v0 = 0;
     pc0 = ra;
 }
@@ -2579,7 +2583,7 @@ void psxBios_InitException(HLE_BIOS_CALL_ARGS) { // 01
  */
 
 void psxBios_SysEnqIntRP(HLE_BIOS_CALL_ARGS) { // 02
-    PSXBIOS_LOG("psxBios_%s: %x (0x%x)\n", biosC0n[0x02] ,a0, a1);
+    PSXBIOS_LOG("psxBios_%s: %x (0x%x)", biosC0n[0x02] ,a0, a1);
     dbg_check(a0 < HANDLER_MAX);
 
     // Get the pointer to 'a0' priority linked list
@@ -2602,7 +2606,7 @@ void psxBios_SysEnqIntRP(HLE_BIOS_CALL_ARGS) { // 02
  */
 
 void psxBios_SysDeqIntRP(HLE_BIOS_CALL_ARGS) { // 03
-    PSXBIOS_LOG("psxBios_%s: %x (0x%x)\n", biosC0n[0x03], a0, a1);
+    PSXBIOS_LOG("psxBios_%s: %x (0x%x)", biosC0n[0x03], a0, a1);
     dbg_check(a0 < HANDLER_MAX);
 
     // Note: It is implemented as intended but original PSX might be buggy
@@ -2642,7 +2646,7 @@ void psxBios_SysDeqIntRP(HLE_BIOS_CALL_ARGS) { // 03
 }
 
 void psxBios_SysInitMemory(HLE_BIOS_CALL_ARGS) { // 08
-    PSXBIOS_LOG("psxBios_%s: %x (0x%x)\n", biosC0n[0x08], a0, a1);
+    PSXBIOS_LOG("psxBios_%s: %x (0x%x)", biosC0n[0x08], a0, a1);
     g_hle->kheap_addr = a0;
     g_hle->kheap_size = a1;
 
@@ -2651,7 +2655,7 @@ void psxBios_SysInitMemory(HLE_BIOS_CALL_ARGS) { // 08
 }
 
 void psxBios_InitDefInt(HLE_BIOS_CALL_ARGS) { // 0c
-    PSXBIOS_LOG("psxBios_%s\n", biosC0n[0x0c]);
+    PSXBIOS_LOG("psxBios_%s", biosC0n[0x0c]);
 
     v0 = 0;
     pc0 = ra;
@@ -2754,7 +2758,7 @@ void psxBiosInit_StdLib() {
 }
 
 void psxBiosInit() {
-    PSXBIOS_LOG("psxBiosInit\n");
+    PSXBIOS_LOG("psxBiosInit");
     psxBiosInitFull();
 }
 
@@ -3256,7 +3260,7 @@ void psxBiosLoadExecCdrom() {
             if (auto lvalue  = linetok.GetNextToken('=')) {
                 auto rvalue  = linetok.GetNextToken();
 
-                PSXBIOS_LOG("%s=%s\n", lvalue, rvalue);
+                PSXBIOS_LOG("%s=%s", lvalue, rvalue);
 
                 if (strcasecmp(lvalue, "boot") == 0) {
                     if (rvalue) {
@@ -3511,7 +3515,7 @@ void biosInterrupt() {
     for (int i = 0; i < 3; i++) { // Rcnt 0,1,2
         if (istat & (1 << (i + 4))) {
             DeliverEvent(EVENT_CLASS_TIMER + i, EVENT_SPEC_INTERRUPT);
-            //PSXBIOS_LOG("Clear ISTAT for RCNT %d\n", i);
+            //PSXBIOS_LOG("Clear ISTAT for RCNT %d", i);
             auto auto_ack = LoadFromLE(psxMu32ref(TIMER_IRQ_AUTO_ACK + (i <<2)));
             if (auto_ack)
                 Write_ISTAT(~(1 << (i + 4)));
@@ -3547,7 +3551,7 @@ void psxBiosException80() {
     auto excode = (CP0_CAUSE & 0x3c) >> 2;
     switch (excode) {
         case 0x00: { // Interrupt
-            // PSXCPU_LOG("interrupt\n");
+            // PSXCPU_LOG("interrupt");
             saveContextException();
 
             // Safest place to deliver event. Register context is saved, IRQ are disabled
@@ -3592,7 +3596,7 @@ void psxBiosException80() {
 
             if (g_hle->jmp_int) {
                 uint32_t* jmpptr = (uint32_t*)PSXM(g_hle->jmp_int);
-                //PSXBIOS_LOG("jmp_int @ %08x - ra=%08x sp=%08x fp=%08x\n", g_hle->jmp_int, jmpptr[0], jmpptr[1], jmpptr[2]);
+                //PSXBIOS_LOG("jmp_int @ %08x - ra=%08x sp=%08x fp=%08x", g_hle->jmp_int, jmpptr[0], jmpptr[1], jmpptr[2]);
                 Write_ISTAT(0xffffffff);
 
                 ra = jmpptr[0];
@@ -3611,7 +3615,7 @@ void psxBiosException80() {
         }
 
         case 0x08: // Syscall
-            //PSXBIOS_LOG("syscall exp %x\n", a0);
+            //PSXBIOS_LOG("syscall exp %x", a0);
             switch (a0) {
                 case 1: // EnterCritical - disable irq's
                     /* Fixes Medievil 2 not loading up new game, Digimon World not booting up and possibly others */
@@ -3647,7 +3651,7 @@ void psxBiosException80() {
         break;
 
         default:
-            PSXBIOS_LOG("unknown bios exception 0x%x (%s)\n", excode, exmne[excode]);
+            PSXBIOS_LOG("unknown bios exception 0x%x (%s)", excode, exmne[excode]);
             break;
     }
 
@@ -3665,7 +3669,7 @@ bool psxbios_invoke_any(u32 callTableId, const HLE_BIOS_TABLE& table, const char
         auto* ptr = (u32*)PSXM(TABLE_A0);
         auto func = LoadFromLE(ptr[call]);
         if ((func & 0xFF00'0000) == 0x8000'0000) {
-            PSXBIOS_LOG("skip callfunc %s (game custom version)\n", names[call]);
+            PSXBIOS_LOG("skip callfunc %s (game custom version)", names[call]);
             pc0 = func; // Jump to the function as we don't have the table dispatcher
             return 1;
         }
@@ -3691,7 +3695,7 @@ bool psxbios_invoke_any(u32 callTableId, const HLE_BIOS_TABLE& table, const char
                 &&  (!my_suppress("ReturnFromExecption"   ))
                 &&  (!my_suppress("TestEvent"             ))
             )){
-                PSXBIOS_LOG("callfunc %s\n", names[call]);
+                PSXBIOS_LOG("callfunc %s", names[call]);
             }
         }
     }
