@@ -1938,48 +1938,53 @@ static void buopen(int mcd)
         v0 = 1 + mcd;
         break;
     }
-    if (a1 & 0x200 && v0 == -1) { /* FCREAT */
-        for (i=1; i<16; i++) {
-            int j, xorx, nblk = a1 >> 16;
-            char *pptr, *fptr2;
-            char *fptr = mcd_data + 128 * i;
+    if (a1 & 0x200) { /* FCREAT */
+        if (v0 == -1) {
+            for (i=1; i<16; i++) {
+                int j, xorx, nblk = a1 >> 16;
+                char *pptr, *fptr2;
+                char *fptr = mcd_data + 128 * i;
 
-            if ((*fptr & 0xF0) != 0xa0) continue;
+                if ((*fptr & 0xF0) != 0xa0) continue;
 
-            g_hle->FDesc[1 + mcd].mcfile = i;
-            fptr[0] = 0x51;
-            fptr[4] = 0x00;
-            fptr[5] = 0x20 * nblk;
-            fptr[6] = 0x00;
-            fptr[7] = 0x00;
-            strcpy(fptr+0xa, g_hle->FDesc[1 + mcd].name);
-            pptr = fptr2 = fptr;
-            for(j=2; j<=nblk; j++) {
-                int k;
-                for(i++; i<16; i++) {
-                    fptr2 += 128;
+                g_hle->FDesc[1 + mcd].mcfile = i;
+                fptr[0] = 0x51;
+                fptr[4] = 0x00;
+                fptr[5] = 0x20 * nblk;
+                fptr[6] = 0x00;
+                fptr[7] = 0x00;
+                strcpy(fptr+0xa, g_hle->FDesc[1 + mcd].name);
+                pptr = fptr2 = fptr;
+                for(j=2; j<=nblk; j++) {
+                    int k;
+                    for(i++; i<16; i++) {
+                        fptr2 += 128;
 
-                    memset(fptr2, 0, 128);
-                    fptr2[0] = j < nblk ? 0x52 : 0x53;
-                    pptr[8] = i - 1;
-                    pptr[9] = 0;
-                    for (k=0, xorx=0; k<127; k++) xorx^= pptr[k];
-                    pptr[127] = xorx;
-                    pptr = fptr2;
-                    break;
+                        memset(fptr2, 0, 128);
+                        fptr2[0] = j < nblk ? 0x52 : 0x53;
+                        pptr[8] = i - 1;
+                        pptr[9] = 0;
+                        for (k=0, xorx=0; k<127; k++) xorx^= pptr[k];
+                        pptr[127] = xorx;
+                        pptr = fptr2;
+                        break;
+                    }
+                    /* shouldn't this return ENOSPC if i == 16? */
                 }
-                /* shouldn't this return ENOSPC if i == 16? */
+                pptr[8] = pptr[9] = 0xff;
+                for (j=0, xorx=0; j<127; j++) xorx^= pptr[j];
+                pptr[127] = xorx;
+                SysPrintf("openC %s %d\n", ptr, nblk);
+                v0 = 1 + mcd;
+                /* just go ahead and resave them all */
+                VmcDirty(mcd - 1);
+                break;
             }
-            pptr[8] = pptr[9] = 0xff;
-            for (j=0, xorx=0; j<127; j++) xorx^= pptr[j];
-            pptr[127] = xorx;
-            SysPrintf("openC %s %d\n", ptr, nblk);
-            v0 = 1 + mcd;
-            /* just go ahead and resave them all */
-            VmcDirty(mcd - 1);
-            break;
+            /* shouldn't this return ENOSPC if i == 16? */
+        } else {
+            // File already exist
+            v0 = -1;
         }
-        /* shouldn't this return ENOSPC if i == 16? */
     }
 }
 

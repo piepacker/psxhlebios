@@ -110,14 +110,22 @@ const char * const biosC0n[256] = {
 
 // Intended to be called by the emulator as a basic bios tracing
 void psxBiosPrintCall(int table) {
+    bool print_internal = false;
     bool print_all = true;
     bool print_spam = false;
     int call = t1 & 0xff;
+
+    // Skip internal (call from kernel)
+    if (!print_internal) {
+        if ((ra & PS1_SegmentAddrMask) < 0xFFFF || (ra & PS1_SegmentAddrMask) > PS1_RamMirrorSize)
+            return;
+    }
+
     if (table == 0xA0) {
         if (print_all || biosA0[call])
             PSXBIOS_LOG("psxBios traceA: %s (0x%x, 0x%x, 0x%x, 0x%x) (EPC:0x%x, RA:0x%x)\n", biosA0n[call], a0, a1, a2, a3, CP0_EPC, ra);
     } else if (table == 0xB0) {
-        if (!print_spam && (call == 0xb || call == 0x17))
+        if (!print_spam && (call == 0xb || call == 0x17 || call == 0x10))
             return;
         if (call == 0x3d)
             PSXBIOS_LOG("psxBios put: %c\n", a0);
@@ -127,6 +135,8 @@ void psxBiosPrintCall(int table) {
         if (print_all || biosC0[call])
             PSXBIOS_LOG("psxBios traceC: %s (0x%x, 0x%x, 0x%x, 0x%x) (EPC:0x%x, RA:0x%x)\n", biosC0n[call], a0, a1, a2, a3, CP0_EPC, ra);
     }
+
+    // Print extra information for some calls
     if (table == 0xB0 && call == 0x10) {
         u32 pcb = LoadFromLE(psxMu32ref(G_PROCESS));
         u32 tcb_current = LoadFromLE(psxMu32ref(pcb));
