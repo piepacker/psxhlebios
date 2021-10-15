@@ -179,4 +179,36 @@ void psxBiosPrintEvents() {
 }
 
 void psxBiosPrintThreads() {
+    uint32_t tcb_ptr = LoadFromLE(psxMu32ref(G_THREADS));
+    TCB* tcbs = (TCB*)PSXM(tcb_ptr);
+    uint32_t tcb_max = LoadFromLE(psxMu32ref(G_THREADS_SIZE)) / SIZEOF_TCB;
+
+    u32 pcb = LoadFromLE(psxMu32ref(G_PROCESS));
+    u32 tcb_current = LoadFromLE(psxMu32ref(pcb));
+
+    u32 active_thread = ~0u;
+    if (tcb_current >= tcb_ptr) {
+        active_thread = (tcb_current - tcb_ptr) / SIZEOF_TCB;
+    }
+
+    printf("Thread Control Block 0x%08x, Current Thread 0x%08x\n", tcb_ptr, tcb_current);
+
+    for (auto i = 0u; i < tcb_max ; i++) {
+        const auto& t = tcbs[i];
+
+        std::string status;
+        switch (t.status) {
+            case TCB_THREAD_FREE:       status = "FREE"; break;
+            case TCB_THREAD_RESERVED:   status = (active_thread == i) ? "ACTIVE" : "IDLE"; break;
+            default:                    status = "???"; break;
+        }
+
+        printf("[%d] Status:%s\n", i, status.c_str());
+        if (t.status == TCB_THREAD_RESERVED) {
+            printf("\tPC:   0x%08x\n", t.func);
+            printf("\tSP:   0x%08x\n", t.reg[29]);
+            printf("\tSR:   0x%08x\n", t.SR);
+            printf("\tCAUSE:0x%08x\n", t.cause);
+        }
+    }
 }
