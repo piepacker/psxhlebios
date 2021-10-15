@@ -212,3 +212,30 @@ void psxBiosPrintThreads() {
         }
     }
 }
+
+void psxBiosPrintHandlers() {
+    uint32_t handlers = LoadFromLE(psxMu32ref(G_HANDLERS));
+    uint32_t handlers_max = LoadFromLE(psxMu32ref(G_HANDLERS_SIZE)) / SIZEOF_HANDLER;
+    const char* hint[4] = {
+        "CDROM, Syscall",
+        "Card, VBlank, Timers",
+        "Pad",
+        "Irqs"
+    };
+    for (uint32_t prio = 0; prio < handlers_max; prio++) {
+        printf("----------  priority %d (%s) ----------\n", prio, (prio < 4) ? hint[prio] : "???");
+        uint32_t head = handlers + prio * SIZEOF_HANDLER;
+        uint32_t count = 0;
+        while (head != 0) {
+            HandlerInfo* h = (HandlerInfo*)PSXM(head);
+            printf("[%d]\n", count);
+            if (h->verifier) {
+                printf("\tVerifier: 0x%08x\n", h->verifier);
+                if (h->handler)
+                    printf("\tHandler:  0x%08x\n", h->handler);
+            }
+            head = h->next;
+            count++;
+        }
+    };
+}

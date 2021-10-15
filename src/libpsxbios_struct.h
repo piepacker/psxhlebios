@@ -106,6 +106,13 @@ struct AsyncEventInfo {
     uint16_t port;
 };
 
+struct HandlerInfo {
+    uint32_t next;
+    uint32_t handler;
+    uint32_t verifier;
+    uint32_t pad;
+};
+
 struct HleState {
     uint32_t version;
     // Entry point
