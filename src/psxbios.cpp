@@ -1997,20 +1997,23 @@ static void buopen(int mcd)
 /* Internally redirects to "FileRead(fd,tempbuf,1)".*/
 /* For some strange reason, the returned character is sign-expanded; */
 /* So if a return value of FFFFFFFFh could mean either character FFh, or error. */
-/* TODO FIX ME : Properly implement this behaviour */
-void psxBios_getc(HLE_BIOS_CALL_ARGS) // 0x03, 0x35
+void psxBios_getc(HLE_BIOS_CALL_ARGS) // 0x08, 0x3a
 {
-    void *pa1 = Ra1;
+    char c;
 
-    PSXBIOS_LOG("psxBios_%s", biosA0n[0x03]);
+    PSXBIOS_LOG("psxBios_%s", biosA0n[0x08]);
 
-    v0 = -1;
+    switch (a0) {
+        case 2: buread(&c, 1, 1); break;
+        case 3: buread(&c, 2, 1); break;
+    }
 
-    if (pa1) {
-        switch (a0) {
-            case 2: buread(pa1, 1, 1); break;
-            case 3: buread(pa1, 2, 1); break;
-        }
+    if (v0 == 1) {
+        // Manage to read 1 char, sign extend it to int
+        v0 = (int)c;
+    } else {
+        // Error
+        v0 = -1;
     }
 
     pc0 = ra;
@@ -3675,7 +3678,7 @@ bool psxbios_invoke_any(u32 callTableId, const HLE_BIOS_TABLE& table, const char
     else {
         // a trace for calls that are being made to unimplemented functions.
         // Traces for implemented functions are handled by the functions, to allow them to add their own clever/useful info.
-        if (const char* name = names[call]) {
+        if (names[call]) {
             PSXBIOS_LOG("callfunc %s", names[call]);
         }
     }

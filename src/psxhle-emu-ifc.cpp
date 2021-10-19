@@ -80,8 +80,9 @@ void VmcCreate(int port) {
 #if HLE_DUCKSTATION_IFC
 void VmcDirty(int port) {
     dbg_check((u32)port < 2);
-    // FIXME need to set m_changed of the memory card in DS to flush the memory
-    // card to the disk
+    // Swanstation standalone: set m_changed of the memory card and call QueueFileSave to flush the memory card to the disk
+    //
+    // Libretro port doesn't this step, the frontend will query the memcard data
 }
 
 char* VmcGet(int port) {
