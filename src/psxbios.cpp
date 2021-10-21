@@ -2229,13 +2229,13 @@ void psxBios_firstfile(HLE_BIOS_CALL_ARGS) { // 42
     if (pa0) {
         strcpy(g_hle->ffile, pa0);
         g_hle->nfile = 0;
+        // firstfile() calls _card_read() internally, so deliver it's event
+        // API seems to be synchronous (firstfile won't return before the delivery of the event)
         if (!strncmp(pa0, "bu00", 4)) {
-            // firstfile() calls _card_read() internally, so deliver it's event
-            PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO, 0);
+            DeliverEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
             bufile(1, a1);
         } else if (!strncmp(pa0, "bu10", 4)) {
-            // firstfile() calls _card_read() internally, so deliver it's event
-            PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO, 1);
+            DeliverEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
             bufile(2, a1);
         }
     }
@@ -2350,14 +2350,14 @@ void psxBios_delete(HLE_BIOS_CALL_ARGS) { // 45
     if (pa0) {
         // Game (Azure Dreams)
         // delete() calls _card_read() internally, so deliver it's event
+        // API seems to be synchronous (delete won't return before the delivery of the event)
         if (!strncmp(pa0, "bu00", 4)) {
+            DeliverEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
             budelete(1);
-            PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO, 0);
         }
-
         if (!strncmp(pa0, "bu10", 4)) {
+            DeliverEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
             budelete(2);
-            PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO, 1);
         }
     }
 
