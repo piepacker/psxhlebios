@@ -138,7 +138,7 @@ struct HleState {
     uint32_t initial_sp;
     // Async event handling
     uint32_t async_event_nb;
-    AsyncEventInfo async_events[64];
+    AsyncEventInfo async_events[128];
     uint32_t busy_card_info; // 1 bit per port (so 2 bits)
 };
 
