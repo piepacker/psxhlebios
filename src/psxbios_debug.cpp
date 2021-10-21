@@ -127,17 +127,17 @@ void psxBiosPrintCall(int table) {
 
     if (table == 0xA0) {
         if (print_all || biosA0[call])
-            PSXBIOS_LOG("psxBios traceA: %s (0x%x, 0x%x, 0x%x, 0x%x) (EPC:0x%x, RA:0x%x)\n", biosA0n[call], a0, a1, a2, a3, CP0_EPC, ra);
+            PSXBIOS_LOG("psxBios traceA: %s (0x%x, 0x%x, 0x%x, 0x%x) (EPC:0x%x, RA:0x%x)", biosA0n[call], a0, a1, a2, a3, CP0_EPC, ra);
     } else if (table == 0xB0) {
         if (!print_spam && (call == 0xb || call == 0x17 || call == 0x10))
             return;
         if (call == 0x3d)
-            PSXBIOS_LOG("psxBios put: %c\n", a0);
+            PSXBIOS_LOG("psxBios put: %c", a0);
         else if (print_all || biosB0[call])
-            PSXBIOS_LOG("psxBios traceB: %s (0x%x, 0x%x, 0x%x, 0x%x) (EPC:0x%x, RA:0x%x)\n", biosB0n[call], a0, a1, a2, a3, CP0_EPC, ra);
+            PSXBIOS_LOG("psxBios traceB: %s (0x%x, 0x%x, 0x%x, 0x%x) (EPC:0x%x, RA:0x%x)", biosB0n[call], a0, a1, a2, a3, CP0_EPC, ra);
     } else if (table == 0xC0) {
         if (print_all || biosC0[call])
-            PSXBIOS_LOG("psxBios traceC: %s (0x%x, 0x%x, 0x%x, 0x%x) (EPC:0x%x, RA:0x%x)\n", biosC0n[call], a0, a1, a2, a3, CP0_EPC, ra);
+            PSXBIOS_LOG("psxBios traceC: %s (0x%x, 0x%x, 0x%x, 0x%x) (EPC:0x%x, RA:0x%x)", biosC0n[call], a0, a1, a2, a3, CP0_EPC, ra);
     }
 
     // Print extra information for some calls
@@ -145,7 +145,7 @@ void psxBiosPrintCall(int table) {
         u32 pcb = LoadFromLE(psxMu32ref(G_PROCESS));
         u32 tcb_current = LoadFromLE(psxMu32ref(pcb));
         u32 tcb_0 = LoadFromLE(psxMu32ref(G_THREADS));
-        PSXBIOS_LOG("Change Thread from %x (%d)\n", tcb_current, (tcb_current - tcb_0) / SIZEOF_TCB);
+        PSXBIOS_LOG("Change Thread from %x (%d)", tcb_current, (tcb_current - tcb_0) / SIZEOF_TCB);
     }
 }
 
