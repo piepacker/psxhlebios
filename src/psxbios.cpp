@@ -789,18 +789,31 @@ void psxBios_malloc(HLE_BIOS_CALL_ARGS) { // 0x33
         return;
     }
 
+    // Silly stuff to handle properly the 2MB mirror of PSX
+    // because some silly dev allocate data inside the mirror
+    // For example super marvel set a ~6MB heap on a 2MB console...
+    auto read_mem = [](u32* a) -> u32 {
+        u32* a_mirror =(u32*)PSXM((sptr)a - (sptr)PSX_RAM_START);
+        return LoadFromLE(*a_mirror);
+    };
+    auto write_mem = [](u32* a, u32 v) {
+        u32* a_mirror =(u32*)PSXM((sptr)a - (sptr)PSX_RAM_START);
+        StoreToLE(*a_mirror, v);
+    };
+
     u32* heap_end = (u32*)((u8*)PSXM(g_hle->heap_addr) + g_hle->heap_size);
     // scan through heap and combine free chunks of space
     chunk = (u32*)PSXM(g_hle->heap_addr);
     colflag = 0;
     while(chunk < heap_end) {
+        u32 chunk_value = read_mem(chunk);
         // get size and status of actual chunk
-        csize = ((u32)*chunk) & 0xfffffffc;
-        cstat = ((u32)*chunk) & 1;
+        csize = (chunk_value) & 0xfffffffc;
+        cstat = (chunk_value) & 1;
 
         // most probably broken heap descriptor
         // this fixes Burning Road
-        if (*chunk == 0) {
+        if (chunk_value == 0) {
             newchunk = chunk;
             dsize = ((sptr)heap_end - (sptr)chunk) - 4;
             colflag = 1;
@@ -820,7 +833,7 @@ void psxBios_malloc(HLE_BIOS_CALL_ARGS) { // 0x33
         else {
             if(colflag == 1) {			// collection is over
                 colflag = 0;
-                StoreToLE(*newchunk, dsize | 1);
+                write_mem(newchunk, dsize | 1);
             }
         }
 
@@ -829,11 +842,12 @@ void psxBios_malloc(HLE_BIOS_CALL_ARGS) { // 0x33
     }
     // if neccessary free memory on end of heap
     if (colflag == 1)
-        StoreToLE(*newchunk, dsize | 1);
+        write_mem(newchunk, dsize | 1);
 
     chunk = (u32*)PSXM(g_hle->heap_addr);
-    csize = ((u32)*chunk) & 0xfffffffc;
-    cstat = ((u32)*chunk) & 1;
+    u32 chunk_value = read_mem(chunk);
+    csize = chunk_value & 0xfffffffc;
+    cstat = chunk_value & 1;
     dsize = (a0 + 3) & 0xfffffffc;
 
     // exit on uninitialized heap
@@ -848,29 +862,31 @@ void psxBios_malloc(HLE_BIOS_CALL_ARGS) { // 0x33
     while ((dsize > csize || cstat==0) && chunk < heap_end ) {
         chunk = (u32*)((sptr)chunk + csize + 4);
 
-            // catch out of memory
-            if(chunk >= heap_end) {
-                SysErrorPrintf("malloc %x,%x: Out of memory error!", v0, a0);
-                v0 = 0; pc0 = ra;
-                return;
-            }
+        // catch out of memory
+        if(chunk >= heap_end) {
+            SysErrorPrintf("malloc %x,%x: Out of memory error!", v0, a0);
+            v0 = 0; pc0 = ra;
+            return;
+        }
 
-        csize = ((u32)*chunk) & 0xfffffffc;
-        cstat = ((u32)*chunk) & 1;
+        u32 chunk_value = read_mem(chunk);
+        csize = chunk_value & 0xfffffffc;
+        cstat = chunk_value & 1;
     }
 
     // allocate memory
     if(dsize == csize) {
         // chunk has same size
-        *chunk &= 0xfffffffc;
+        u32 chunk_value = read_mem(chunk);
+        write_mem(chunk, chunk_value & 0xfffffffc);
     } else if (dsize > csize) {
         v0 = 0; pc0 = ra;
         return;
     } else {
         // split free chunk
-        StoreToLE(*chunk, dsize);
+        write_mem(chunk, dsize);
         newchunk = (u32*)((sptr)chunk + dsize + 4);
-        StoreToLE(*newchunk, ((csize - dsize - 4) & 0xfffffffc) | 1);
+        write_mem(newchunk, ((csize - dsize - 4) & 0xfffffffc) | 1);
     }
 
     // return pointer to allocated memory
@@ -936,7 +952,13 @@ void psxBios_InitHeap(HLE_BIOS_CALL_ARGS) { // 0x39
 
     PSXBIOS_LOG("psxBios_%s", biosA0n[0x39]);
 
-    if (((a0 & 0x1fffff) + a1)>= 0x200000) size = 0x1ffffc - (a0 & 0x1fffff);
+    const u32 _8mb = 8 * 1024 * 1024;
+    const u32 _8mb_mask = _8mb - 1;
+    // Super Marvel allocate heap at the end of the space with a huge size (~6MB)
+    // Size must be clamped at 8MB otherwise few KB are available and generate a Out-Of-Memory
+    // error for the malloc.
+    // Yes game would have overwritten the kernel if they really used the malloc-ed buffer
+    if (((a0 & _8mb_mask) + a1)>= _8mb) size = _8mb - 4 - (a0 & _8mb_mask);
     else size = a1;
 
     size &= 0xfffffffc;
