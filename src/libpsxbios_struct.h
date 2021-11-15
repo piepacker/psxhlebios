@@ -27,6 +27,18 @@ const uint32_t TABLE_C0        = 0x0674; // vector for call c0
 const uint32_t TIMER_IRQ_AUTO_ACK = 0x8600;
 // End of Magic value
 
+// Statically allocate some data at the end of the kernel space (0xE000-0xFFFF)
+const uint32_t KERNEL_CP0_STATUS        = 0xE000; // Used internally to disable exception
+const uint32_t KERNEL_EXCEPTION_HANDLER = 0xE004; // Reserved PC to call the HLE exception handler
+const uint32_t KERNEL_HEAP              = 0xE100; // Put a heap in the middle for kernel data structure
+const uint32_t KERNEL_HEAP_END          = 0xF800;
+const uint32_t KERNEL_END               = 0xFFFC;
+
+// Statically allocate some data in the rom
+const uint32_t ROM_HLE_STATE     = 0x01000;
+const uint32_t ROM_FONT_8140     = 0x66000;
+const uint32_t ROM_FONT_889F     = 0x69d68;
+
 // Default value of internal structure size
 extern uint32_t PCB_MAX;
 extern uint32_t TCB_MAX;

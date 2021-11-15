@@ -64,16 +64,6 @@ u32 TCB_MAX                   = 4;
 u32 HANDLER_MAX               = 4;
 u32 EVCB_MAX                  = 32;
 
-// Statically allocate some data at the end of the kernel space (0xE000-0xFFFF)
-const u32 KERNEL_CP0_STATUS  = 0xE000;     // used internally to disable exception
-const u32 KERNEL_HEAP        = 0xE100;     // Put a heap in the middle for kernel data structure
-const u32 KERNEL_HEAP_END    = 0xF800;
-const u32 KERNEL_END         = 0xFFFC;
-// Statically allocate some data in the rom
-const u32 ROM_HLE_STATE     = 0x01000;
-const u32 ROM_FONT_8140     = 0x66000;
-const u32 ROM_FONT_889F     = 0x69d68;
-
 HleState* g_hle;
 
 // oh silly PCSX. they did the classic VM nono and just recursively called the interpreter
@@ -3248,6 +3238,15 @@ void psxBiosInitFull() {
 
     // Reset GPU stat, in particular enable the display
     GPU_W_STATUS(0x0300'0000);
+
+    // Install a trampoline for exception handler
+    //
+    // Note: Jackie Chan replaces the trampoline to call their own exception handler. But they
+    // still call a copy of the kernel trampoline
+    StoreToLE(psxMu32ref(0x80), 0x3c1a'0000);                            // lui k0, 0
+    StoreToLE(psxMu32ref(0x84), 0x375a'0000 + KERNEL_EXCEPTION_HANDLER); // ori k0, k0, immediate
+    StoreToLE(psxMu32ref(0x88), 0x0340'0008);                            // jr k0
+    StoreToLE(psxMu32ref(0x8C), 0x0000'0000);                            // nop
 }
 
 void psxBiosShutdown() {
@@ -3737,6 +3736,13 @@ extern "C" int HleDispatchCall(uint32_t pc) {
             psxBiosException180();
             return 0;
         case 0x80:
+        case 0x84:
+        case 0x88:
+        case 0x8C:
+            // The HLE bios installs a trampoline for the exception handler at those addresses
+            // Trampoline must be kept in case a game (like jackie chan) hacked it
+            return 0;
+        case KERNEL_EXCEPTION_HANDLER:
             psxBiosException80();
             return 1;
         case 0xA0:
