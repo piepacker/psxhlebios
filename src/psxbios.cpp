@@ -3127,7 +3127,7 @@ void psxBiosInitFull() {
 
     // Set a magic value in the exception vector to detect if the savestate is from this
     // HLE bios or something else
-    strcpy((char *)PSXM(0x0080), "HLE");
+    strcpy((char *)PSXM(KERNEL_HLE_MAGIC), "HLE");
 
     // not sure about these, the HLE seems to skip them which, I expect, is only wise
     // if we're bypassing BIOS entirely. --jstine
@@ -3243,10 +3243,10 @@ void psxBiosInitFull() {
     //
     // Note: Jackie Chan replaces the trampoline to call their own exception handler. But they
     // still call a copy of the kernel trampoline
-    StoreToLE(psxMu32ref(0x80), 0x3c1a'0000);                            // lui k0, 0
-    StoreToLE(psxMu32ref(0x84), 0x375a'0000 + KERNEL_EXCEPTION_HANDLER); // ori k0, k0, immediate
-    StoreToLE(psxMu32ref(0x88), 0x0340'0008);                            // jr k0
-    StoreToLE(psxMu32ref(0x8C), 0x0000'0000);                            // nop
+    StoreToLE(psxMu32ref(KERNEL_EXCEPTION_VECTOR +  0), 0x3c1a'0000);                            // lui k0, 0
+    StoreToLE(psxMu32ref(KERNEL_EXCEPTION_VECTOR +  4), 0x375a'0000 + KERNEL_EXCEPTION_HANDLER); // ori k0, k0, immediate
+    StoreToLE(psxMu32ref(KERNEL_EXCEPTION_VECTOR +  8), 0x0340'0008);                            // jr k0
+    StoreToLE(psxMu32ref(KERNEL_EXCEPTION_VECTOR + 12), 0x0000'0000);                            // nop
 }
 
 void psxBiosShutdown() {
@@ -3735,10 +3735,10 @@ extern "C" int HleDispatchCall(uint32_t pc) {
         case 0x1FC00180:
             psxBiosException180();
             return 0;
-        case 0x80:
-        case 0x84:
-        case 0x88:
-        case 0x8C:
+        case KERNEL_EXCEPTION_VECTOR:
+        case KERNEL_EXCEPTION_VECTOR+4:
+        case KERNEL_EXCEPTION_VECTOR+8:
+        case KERNEL_EXCEPTION_VECTOR+12:
             // The HLE bios installs a trampoline for the exception handler at those addresses
             // Trampoline must be kept in case a game (like jackie chan) hacked it
             return 0;
@@ -3770,7 +3770,7 @@ extern "C" int HleDispatchCall(uint32_t pc) {
 
 void HleHookAfterLoadState(const char* game_code) {
     // State is already HLE-compliant
-    if (strncmp((char*)PSXM(0x80), "HLE", 3) == 0)
+    if (strncmp((char*)PSXM(KERNEL_HLE_MAGIC), "HLE", 3) == 0)
         return;
 
     // Big trouble, we need to convert current ram to an HLE state
