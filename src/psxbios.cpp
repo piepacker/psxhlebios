@@ -1811,6 +1811,8 @@ void psxBios_InitPAD(HLE_BIOS_CALL_ARGS) { // 0x12
     g_hle->pad_buf2 = a2;
     // a3 contains size of pad_buf2
 
+    g_hle->pad_started = 1;
+
     v0 = 1; pc0 = ra;
 }
 
@@ -1835,7 +1837,7 @@ void psxBios_StopPAD(HLE_BIOS_CALL_ARGS) { // 14
 }
 
 void psxBios_PAD_init(HLE_BIOS_CALL_ARGS) { // 15
-    PSXBIOS_LOG("psxBios_%s", biosB0n[0x15]);
+    PSXBIOS_LOG("psxBios_%s (%x, %x)", biosB0n[0x15], a0, a1);
 
     if (!(a0 == 0x20000000 || a0 == 0x20000001))
     {
@@ -3118,7 +3120,7 @@ void psxBiosInitFull() {
     // Default init most field to 0
     memset(g_hle, 0, sizeof(HleState));
 
-    g_hle->version = 0;
+    g_hle->version = 1;
     g_hle->cardState = ~0;
 
     psxBiosInitKernelDataStructure();
@@ -3478,39 +3480,39 @@ void biosInterrupt() {
     // someone removed the Vsync condition gate below (likely some hack) --jstine
 
 //	if (istat & 0x1) { // Vsync
-        if (g_hle->pad_buf) {
-            u32 *buf = (u32*)PSXM(g_hle->pad_buf);
-
-            PAD_startPoll(0);
-            if (PAD_poll(0, 0x42) == 0x23) {
-                PAD_poll(0, 0);
-                *buf = PAD_poll(0, 0) << 8;
-                *buf |= PAD_poll(0, 0);
-                PAD_poll(0, 0);
-                *buf &= ~((PAD_poll(0, 0) > 0x20) ? 1 << 6 : 0);
-                *buf &= ~((PAD_poll(0, 0) > 0x20) ? 1 << 7 : 0);
-            } else {
-                PAD_poll(0, 0);
-                *buf = PAD_poll(0, 0) << 8;
-                *buf|= PAD_poll(0, 0);
-            }
-
-            PAD_startPoll(1);
-            if (PAD_poll(1, 0x42) == 0x23) {
-                PAD_poll(1, 0);
-                *buf |= PAD_poll(1, 0) << 24;
-                *buf |= PAD_poll(1, 0) << 16;
-                PAD_poll(1, 0);
-                *buf &= ~((PAD_poll(1, 0) > 0x20) ? 1 << 22 : 0);
-                *buf &= ~((PAD_poll(1, 0) > 0x20) ? 1 << 23 : 0);
-            } else {
-                PAD_poll(1, 0);
-                *buf |= PAD_poll(1, 0) << 24;
-                *buf |= PAD_poll(1, 0) << 16;
-            }
-        }
-
         if (g_hle->pad_started)  {
+            if (g_hle->pad_buf) {
+                u32 *buf = (u32*)PSXM(g_hle->pad_buf);
+
+                PAD_startPoll(0);
+                if (PAD_poll(0, 0x42) == 0x23) {
+                    PAD_poll(0, 0);
+                    *buf = PAD_poll(0, 0) << 8;
+                    *buf |= PAD_poll(0, 0);
+                    PAD_poll(0, 0);
+                    *buf &= ~((PAD_poll(0, 0) > 0x20) ? 1 << 6 : 0);
+                    *buf &= ~((PAD_poll(0, 0) > 0x20) ? 1 << 7 : 0);
+                } else {
+                    PAD_poll(0, 0);
+                    *buf = PAD_poll(0, 0) << 8;
+                    *buf|= PAD_poll(0, 0);
+                }
+
+                PAD_startPoll(1);
+                if (PAD_poll(1, 0x42) == 0x23) {
+                    PAD_poll(1, 0);
+                    *buf |= PAD_poll(1, 0) << 24;
+                    *buf |= PAD_poll(1, 0) << 16;
+                    PAD_poll(1, 0);
+                    *buf &= ~((PAD_poll(1, 0) > 0x20) ? 1 << 22 : 0);
+                    *buf &= ~((PAD_poll(1, 0) > 0x20) ? 1 << 23 : 0);
+                } else {
+                    PAD_poll(1, 0);
+                    *buf |= PAD_poll(1, 0) << 24;
+                    *buf |= PAD_poll(1, 0) << 16;
+                }
+            }
+
             if (g_hle->pad_buf1) {
                 psxBios_PADpoll(0, PSXM(g_hle->pad_buf1));
             }
@@ -3774,9 +3776,24 @@ extern "C" int HleDispatchCall(uint32_t pc) {
 }
 
 void HleHookAfterLoadState(const char* game_code) {
-    // State is already HLE-compliant
-    if (strncmp((char*)PSXM(KERNEL_HLE_MAGIC), "HLE", 3) == 0)
+    if (strncmp((char*)PSXM(KERNEL_HLE_MAGIC), "HLE", 3) == 0) {
+        // State is already HLE-compliant
+        // But we still need to patch up thing for newer version
+
+        // Version 0:
+        // * pad_buf was always polled even when pad_started wasn't 1
+        // * pad_started wasn't set to 1 in InitPad
+        // Version 1+:
+        // * pad_buf is only polled when pad_start is 1
+        // * pad_started is set to 1 in InitPad
+        if (g_hle->version < 1) {
+            // Ensure pad_started is 1 when there is a pad_buf. So pad_buf is still polled
+            // even when we missed the pad_started update
+            if (g_hle->pad_buf)
+                g_hle->pad_started = 1;
+        }
         return;
+    }
 
     // Big trouble, we need to convert current ram to an HLE state
 
