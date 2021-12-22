@@ -37,9 +37,10 @@ const uint32_t KERNEL_HEAP_END          = 0xF800;
 const uint32_t KERNEL_END               = 0xFFFC;
 
 // Statically allocate some data in the rom
-const uint32_t ROM_HLE_STATE     = 0x01000;
-const uint32_t ROM_FONT_8140     = 0x66000;
-const uint32_t ROM_FONT_889F     = 0x69d68;
+const uint32_t ROM_HLE_STATE        = 0x01000;
+const uint32_t ROM_DEVIL_DICE_MAGIC = 0x65FF0;
+const uint32_t ROM_FONT_8140        = 0x66000;
+const uint32_t ROM_FONT_889F        = 0x69d68;
 
 // Default value of internal structure size
 extern uint32_t PCB_MAX;

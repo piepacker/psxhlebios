@@ -3247,6 +3247,11 @@ void psxBiosInitFull() {
     StoreToLE(psxMu32ref(KERNEL_EXCEPTION_VECTOR +  4), 0x375a'0000 + KERNEL_EXCEPTION_HANDLER); // ori k0, k0, immediate
     StoreToLE(psxMu32ref(KERNEL_EXCEPTION_VECTOR +  8), 0x0340'0008);                            // jr k0
     StoreToLE(psxMu32ref(KERNEL_EXCEPTION_VECTOR + 12), 0x0000'0000);                            // nop
+
+    // I don't know why but the "devil dice" copies the rom from 0 up to this
+    // magical value. In order to avoid an infinite loop, let's put this
+    // magical value in the middle of the rom
+    StoreToLE((u32&)PSX_ROM_START[ROM_DEVIL_DICE_MAGIC], 0x03E0'0008);
 }
 
 void psxBiosShutdown() {
