@@ -3776,7 +3776,9 @@ extern "C" int HleDispatchCall(uint32_t pc) {
 }
 
 void HleHookAfterLoadState(const char* game_code) {
-    if (strncmp((char*)PSXM(KERNEL_HLE_MAGIC), "HLE", 3) == 0) {
+    if ((strncmp((char*)PSXM(0x40), "HLE", 3) == 0) || // Older value, I'm afraid that it could be overwritten (Medal of Honnor)
+        (strncmp((char*)PSXM(0x80), "HLE", 3) == 0) || // Older value, overwritten by Jacky Chan
+        (strncmp((char*)PSXM(KERNEL_HLE_MAGIC), "HLE", 3) == 0)) {
         // State is already HLE-compliant
         // But we still need to patch up thing for newer version
 

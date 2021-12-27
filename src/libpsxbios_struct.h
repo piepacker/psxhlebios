@@ -28,10 +28,10 @@ const uint32_t TIMER_IRQ_AUTO_ACK = 0x8600;
 // End of Magic value
 
 // Statically allocate some data at the end of the kernel space (0xE000-0xFFFF)
-const uint32_t KERNEL_HLE_MAGIC         = 0x0040; // Magical value to detect savestate mode
 const uint32_t KERNEL_EXCEPTION_VECTOR  = 0x0080; // The exception vector
 const uint32_t KERNEL_CP0_STATUS        = 0xE000; // Used internally to disable exception
 const uint32_t KERNEL_EXCEPTION_HANDLER = 0xE004; // Reserved PC to call the HLE exception handler
+const uint32_t KERNEL_HLE_MAGIC         = 0xE008; // Magical value to detect savestate mode
 const uint32_t KERNEL_HEAP              = 0xE100; // Put a heap in the middle for kernel data structure
 const uint32_t KERNEL_HEAP_END          = 0xF800;
 const uint32_t KERNEL_END               = 0xFFFC;
