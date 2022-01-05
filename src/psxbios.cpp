@@ -770,7 +770,7 @@ void psxBios_qsort(HLE_BIOS_CALL_ARGS) { // 0x31
 void psxBios_malloc(HLE_BIOS_CALL_ARGS) { // 0x33
     u32 *chunk, *newchunk = NULL;
     u32 dsize = 0, csize, cstat;
-    int colflag;
+    int colflag = 0;
     PSXBIOS_LOG("psxBios_%s", biosA0n[0x33]);
 
     if (!a0 || (!g_hle->heap_size || !g_hle->heap_addr)) {
@@ -794,7 +794,13 @@ void psxBios_malloc(HLE_BIOS_CALL_ARGS) { // 0x33
     u32* heap_end = (u32*)((u8*)PSXM(g_hle->heap_addr) + g_hle->heap_size);
     // scan through heap and combine free chunks of space
     chunk = (u32*)PSXM(g_hle->heap_addr);
-    colflag = 0;
+
+    // Allocate heap if it is the first malloc after initHeap
+    if (read_mem(chunk) == 0) {
+        u32 size = ((sptr)heap_end - (sptr)chunk) - 4;
+        write_mem(chunk, size | 1);
+    }
+
     while(chunk < heap_end) {
         u32 chunk_value = read_mem(chunk);
         // get size and status of actual chunk
@@ -955,8 +961,9 @@ void psxBios_InitHeap(HLE_BIOS_CALL_ARGS) { // 0x39
 
     g_hle->heap_addr = a0;
     g_hle->heap_size = size;
-    /* HACKFIX: Commenting out this line fixes GTA2 crash */
-    //StoreToLE(*heap_addr, size | 1);
+
+    // You can't really alloc the heap now as GTA2 expect the value to be 0
+    StoreToLE(psxMu32ref(g_hle->heap_addr), 0);
 
     SysPrintf("InitHeap %x,%x : %x %x",a0,a1, (int)((uptr)PSXM(g_hle->heap_addr)-(uptr)PSX_RAM_START), size);
 
@@ -3574,7 +3581,7 @@ void psxBiosException80() {
     auto excode = (CP0_CAUSE & 0x3c) >> 2;
     switch (excode) {
         case 0x00: { // Interrupt
-            // PSXCPU_LOG("interrupt");
+            //PSXBIOS_LOG("interrupt fire");
             saveContextException();
 
             // Safest place to deliver event. Register context is saved, IRQ are disabled
@@ -3602,6 +3609,7 @@ void psxBiosException80() {
 
                     // Call first the verifier
                     if (!verifier)  continue;
+                    //PSXBIOS_LOG("\tIRQ verifier %x", verifier);
                     softCall(verifier);
 
                     // Continue if verifier return 0
@@ -3609,6 +3617,7 @@ void psxBiosException80() {
 
                     // Otherwise fire the handler
                     a0 = v0;
+                    //PSXBIOS_LOG("\tIRQ handler %x", handler);
                     softCall(handler);
 
                     // FIXME: need to push current queue on the stack.
@@ -3685,6 +3694,8 @@ void psxBiosException80() {
 }
 
 bool psxbios_invoke_any(u32 callTableId, const HLE_BIOS_TABLE& table, const char * const names[256]) {
+    //psxBiosPrintCall(callTableId);
+
     int call = t1 & 0xff;
 
     // Legend replaces malloc/free with custom implementation
