@@ -42,7 +42,7 @@ EVCB* GetEVCB();
 void DeliverEvent(uint32_t ev, uint32_t spec);
 void initEvents(uint32_t kernel_evcb);
 // Async Event
-void PostAsyncEvent(uint32_t ev, uint16_t spec, uint16_t port);
+void PostAsyncEvent(uint32_t ev, uint16_t spec, uint16_t port, uint16_t repeat = 1);
 void DeliverAsyncEvent();
 // Event PSX
 void psxBios_DeliverEvent(HLE_BIOS_CALL_ARGS);

@@ -1393,7 +1393,7 @@ void psxBios__bu_init(HLE_BIOS_CALL_ARGS) { // 70
 
     // This call shall init the 2 ports. But we send event once, all games boot fine
     // so let's keep this behavior and put an invalid port number
-    uint16_t port = 0xFFFF;
+    uint16_t port = INVALID_PORT;
 
 #if HLE_ENABLE_YIELD
     // Impl Note: honestly this would be easier rewritten as MIPS assembly.

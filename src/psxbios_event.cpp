@@ -52,7 +52,10 @@ void DeliverEvent(u32 ev, u32 spec) {
     }
 }
 
-void PostAsyncEvent(uint32_t ev, uint16_t spec, uint16_t port) {
+void PostAsyncEvent(uint32_t ev, uint16_t spec, uint16_t port, uint16_t repeat) {
+    rel_check(repeat != INVALID_REPEAT, "Invalid (~0) repeat parameter in PostAsyncEvent");
+    // I'm not sure what shall happen if repeat is 0
+    dbg_check(repeat != 0, "Invalid (0) repeat parameter in PostAsyncEvent");
     // Goal of event is to be allow asynchronous bios call execution. Using synchronous event work most of the
     // time but there are few caveats.
     // * Caveat1: An handler plugged on an event might not be reentrant, so you have the risk to run concurrent handler.
@@ -72,6 +75,7 @@ void PostAsyncEvent(uint32_t ev, uint16_t spec, uint16_t port) {
         e.ev = ev;
         e.spec = spec;
         e.port = port;
+        e.repeat = repeat;
         g_hle->async_event_nb++;
     } else {
         PSXBIOS_LOG("ERROR: PostAsyncEvent %8x;%x (port=%d) can't be done ! async event stack full !!!", ev, spec, port);
@@ -79,7 +83,9 @@ void PostAsyncEvent(uint32_t ev, uint16_t spec, uint16_t port) {
         dbg_check(false);
     }
 #else
-    DeliverEvent(ev, spec);
+    for (uint32_t i = 0; i < repeat; i++) {
+        DeliverEvent(ev, spec);
+    }
 #endif
 }
 
@@ -101,7 +107,7 @@ void DeliverAsyncEvent() {
 
     // Before we deliver anyc event, mark async command as done
     for (uint32_t i = 0; i < nb; i++) {
-        if (events[i].port > 0x7FF) {
+        if (events[i].port == INVALID_PORT) {
             // Invalid port. Clear all bits
             g_hle->busy_card_info = 0;
         } else {
@@ -113,7 +119,15 @@ void DeliverAsyncEvent() {
     // Note: Delivering Event will updated async command status
     // (aka busy_card_info)
     for (uint32_t i = 0; i < nb; i++) {
-        DeliverEvent(events[i].ev, events[i].spec);
+        // Repeat same events multiple time (typically 1 event for every 128B sector read/written)
+        uint32_t repeat = std::max((uint32_t)events[i].repeat, 1u);
+        // Keep compatibility with older savestate which didn't have the repeat info but a 16b port value
+        if (events[i].port == INVALID_PORT && events[i].repeat == INVALID_REPEAT) {
+            repeat = 1;
+        }
+        for (uint32_t j = 0; j < repeat; j++) {
+            DeliverEvent(events[i].ev, events[i].spec);
+        }
     }
 }
 

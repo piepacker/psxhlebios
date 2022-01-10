@@ -118,8 +118,16 @@ typedef struct {
 struct AsyncEventInfo {
     uint32_t ev;
     uint16_t spec;
-    uint16_t port;
+    struct {
+        // In order to keep savestate compatibility the old uint16_t port
+        // was cut in half. Max repeat value shall be 1024 (for a 128KB memory card of 128B sector)
+        uint16_t repeat:12;
+        uint16_t port:4;
+    };
 };
+const uint16_t INVALID_REPEAT = 0xFFF; // 12 bits
+const uint16_t INVALID_PORT = 0xF; // 4 bits
+static_assert(sizeof(AsyncEventInfo) == 8);
 
 struct HandlerInfo {
     uint32_t next;
