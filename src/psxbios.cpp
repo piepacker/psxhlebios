@@ -1913,7 +1913,7 @@ void buread(void* ra1, int mcd, int length) {
     memcpy(ra1, ptr, length);
 
     if (fd.mode & 0x8000) {
-        PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO, port);
+        PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO, port, (length + 127) / 128);
         PostAsyncEvent(EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO, port);
         v0 = 0;
     }
@@ -1934,7 +1934,7 @@ void buwrite(void* ra1, int mcd, int length) {
     g_hle->FDesc[1 + mcd].offset += length;
 
     if (g_hle->FDesc[1 + mcd].mode & 0x8000) {
-        PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO, port);
+        PostAsyncEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO, port, (length + 127) / 128);
         PostAsyncEvent(EVENT_CLASS_CARD_BIOS, EVENT_SPEC_END_IO, port);
         v0 = 0;
     }
@@ -2129,7 +2129,8 @@ void psxBios_read(HLE_BIOS_CALL_ARGS) { // 0x34
 
     v0 = -1;
 
-    if (pa1) {
+    // TODO what shall happen when a2 is 0
+    if (a1) {
         switch (a0) {
             case 2: buread(pa1, 1, a2); break;
             case 3: buread(pa1, 2, a2); break;
@@ -2149,7 +2150,7 @@ void psxBios_write(HLE_BIOS_CALL_ARGS) { // 0x35/0x03
     PSXBIOS_LOG("psxBios_%s: %x,%x,%x", biosB0n[0x35], a0, a1, a2);
 
     v0 = -1;
-    if (!pa1) {
+    if (!a1) {
         pc0 = ra;
         return;
     }
@@ -2164,6 +2165,7 @@ void psxBios_write(HLE_BIOS_CALL_ARGS) { // 0x35/0x03
         pc0 = ra; return;
     }
 
+    // TODO what shall happen when a2 is 0
     switch (a0) {
         case 2: buwrite(pa1, 1, a2); break;
         case 3: buwrite(pa1, 2, a2); break;
