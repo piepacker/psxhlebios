@@ -1854,9 +1854,13 @@ void psxBios_PAD_init(HLE_BIOS_CALL_ARGS) { // 15
     }
 
     Write_IMASK((u16)(Read_IMASK() | 0x1));
+
     g_hle->pad_buf = a1;
+    g_hle->pad_started = 1;
+
     *(int*)PSXM(g_hle->pad_buf) = -1;
     CP0_STATUS |= 0x401;
+
     v0 = 2;
     pc0 = ra;
 }
