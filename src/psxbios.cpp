@@ -3756,6 +3756,12 @@ extern "C" int HleDispatchCall(uint32_t pc) {
             psxBiosException180();
             return 0;
         case KERNEL_EXCEPTION_VECTOR:
+            // Old HLE code uses this address to detect a PSX exception
+            if (strncmp((char*)PSXM(KERNEL_EXCEPTION_VECTOR), "HLE", 3) == 0) {
+                psxBiosException80();
+                return 1;
+            }
+            // fall through
         case KERNEL_EXCEPTION_VECTOR+4:
         case KERNEL_EXCEPTION_VECTOR+8:
         case KERNEL_EXCEPTION_VECTOR+12:
