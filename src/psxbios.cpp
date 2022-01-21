@@ -2822,6 +2822,9 @@ static void initHandlers(u32 kernel_handler) {
 void psxBiosInitKernelDataStructure() {
     // By pure lazyness, reuse the hle allocator
     u32 old_pc = pc0;
+    u32 old_gprs[32];
+    rel_check(sizeof(GPR_ARRAY) >= sizeof(old_gprs));
+    memcpy(old_gprs, GPR_ARRAY, sizeof(old_gprs));
 
     // Allocating those data structure in ram provide 2 advantages
     // They are compatible with game that read/write into them
@@ -2854,6 +2857,7 @@ void psxBiosInitKernelDataStructure() {
     initEvents(kernel_evcb);
     initHandlers(kernel_handler);
 
+    memcpy(GPR_ARRAY, old_gprs, sizeof(old_gprs));
     pc0 = old_pc;
 }
 
