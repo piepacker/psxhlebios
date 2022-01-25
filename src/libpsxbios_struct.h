@@ -27,6 +27,9 @@ const uint32_t TABLE_C0        = 0x0674; // vector for call c0
 const uint32_t TIMER_IRQ_AUTO_ACK = 0x8600;
 // End of Magic value
 
+const uint32_t CALL_MALLOC = 0x33;
+const uint32_t CALL_INIT_HEAP = 0x39;
+
 // Statically allocate some data at the end of the kernel space (0xE000-0xFFFF)
 const uint32_t KERNEL_EXCEPTION_VECTOR  = 0x0080; // The exception vector
 const uint32_t KERNEL_CP0_STATUS        = 0xE000; // Used internally to disable exception

@@ -3709,7 +3709,7 @@ bool psxbios_invoke_any(u32 callTableId, const HLE_BIOS_TABLE& table, const char
     int call = t1 & 0xff;
 
     // Legend replaces malloc/free with custom implementation
-    if (callTableId == 0xA0 && call >= 0x33 && call <= 0x39) {
+    if (callTableId == 0xA0 && call >= CALL_MALLOC && call <= CALL_INIT_HEAP) {
         auto* ptr = (u32*)PSXM(TABLE_A0);
         auto func = LoadFromLE(ptr[call]);
         if ((func & 0xFF00'0000) == 0x8000'0000) {
@@ -3867,7 +3867,18 @@ void HleHookAfterLoadState(const char* game_code) {
 
     // Step5 convert the files data structure from non-HLE to HLE
 
-    // Step6 set hle variable based.
+    // Step6 copy back game patch/hack
+    if (!strncmp(game_code, "SLES-00730", 16)) { // legend
+        for (auto id = CALL_MALLOC; id <= CALL_INIT_HEAP; id++) {
+            uint32_t addr = TABLE_A0 + 4 * id;
+            uint32_t func = ram_old[addr/4];
+            if ((func & 0xFF00'0000) == 0x8000'0000) {
+                copy_ram(addr, addr, 4);
+            }
+        }
+    }
+
+    // Step7 set hle variable based.
 
     // Black magic to get heap_size and heap_addr
     // Query the function pointer
@@ -3946,6 +3957,6 @@ void HleHookAfterLoadState(const char* game_code) {
         g_hle->pad_buf2 = 0x801e92b4;
     }
 
-    // Step7 clear all emulators caches, we just updated all the kernel ram
+    // Step8 clear all emulators caches, we just updated all the kernel ram
     ClearAllCaches();
 }
