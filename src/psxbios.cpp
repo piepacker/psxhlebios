@@ -3706,7 +3706,7 @@ void psxBiosException80() {
 bool psxbios_invoke_any(u32 callTableId, const HLE_BIOS_TABLE& table, const char * const names[256]) {
     //psxBiosPrintCall(callTableId);
 
-    int call = t1 & 0xff;
+    uint32_t call = t1 & 0xff;
 
     // Legend replaces malloc/free with custom implementation
     if (callTableId == 0xA0 && call >= CALL_MALLOC && call <= CALL_INIT_HEAP) {
@@ -3810,11 +3810,17 @@ void HleHookAfterLoadState(const char* game_code) {
     if (!is_hle) {
         // some old savestate got corruped HLE MAGIC
         u32 opcode_0x80 = LoadFromLE(psxMu32ref(0x80));
-        if (opcode_0x80 == 0x3c1a'0000) { // This opcode was written by the HLE bios
+        u32 opcode_0x84 = LoadFromLE(psxMu32ref(0x84));
+        if (opcode_0x80 == 0x3c1a'0000 && (opcode_0x84 >> 16u) == 0x375a) { // This opcode was written by the HLE bios
             PSXBIOS_LOG("Invalid bios content, fallback to HLE state format");
             is_hle = true;
         }
     }
+
+    // Check open bios magic
+    bool is_openbios = !!(LoadFromLE(psxMu32ref(TABLE_A0 + 4 * 11)) & 1);
+    dbg_check(!(is_hle && is_openbios), "Load state error, can't be HLE and openBios at the same time");
+    rel_check(is_hle || is_openbios, "Load state error, must be either HLE or openBios");
 
     if (is_hle) {
         // State is already HLE-compliant
