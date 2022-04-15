@@ -117,6 +117,7 @@ void psxBiosPrintCall(int table) {
     bool print_internal = false;
     bool print_all = true;
     bool print_spam = false;
+    bool print_libc = false; // hide various libc (string/mem) call
     int call = t1 & 0xff;
 
     // Skip internal (call from kernel)
@@ -126,8 +127,10 @@ void psxBiosPrintCall(int table) {
     }
 
     if (table == 0xA0) {
-        if (print_all || biosA0[call])
-            PSXBIOS_LOG("psxBios traceA: %s (0x%x, 0x%x, 0x%x, 0x%x) (EPC:0x%x, RA:0x%x)", biosA0n[call], a0, a1, a2, a3, CP0_EPC, ra);
+        if (print_all || biosA0[call]) {
+            if (print_libc || (call < 0x10 && call > 0x30))
+                    PSXBIOS_LOG("psxBios traceA: %s (0x%x, 0x%x, 0x%x, 0x%x) (EPC:0x%x, RA:0x%x)", biosA0n[call], a0, a1, a2, a3, CP0_EPC, ra);
+        }
     } else if (table == 0xB0) {
         if (!print_spam && (call == 0xb || call == 0x17 || call == 0x10))
             return;

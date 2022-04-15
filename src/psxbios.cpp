@@ -2213,7 +2213,8 @@ static void bufile(int mcd_port, u32 _dir) {
         auto* ptr = mcdraw + 128 * (g_hle->nfile + 1);
 
         g_hle->nfile++;
-        if ((*ptr & 0xF0) != 0x50) continue;
+        uint8_t state = *ptr & 0xF0;
+        if (state != 0x50) continue;
         /* Bug link files show up as free block. */
         if (!ptr[0xa]) continue;
         ptr+= 0xa;
@@ -2235,6 +2236,8 @@ static void bufile(int mcd_port, u32 _dir) {
         SysPrintf("%d : %s = %s + %s (match=%d)", g_hle->nfile, dir->name, pfile, ptr, match);
         if (match == 0) { continue; }
         dir->size = 8192;
+        dir->attr = state;
+        dir->head = g_hle->nfile * 0x40; // LBA need this field
         v0 = _dir;
         break;
     }
