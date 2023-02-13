@@ -76,11 +76,11 @@ HleState* g_hle;
 uint8_t hleSoftCall = 0;
 
 void softCall(u32 pc) {
-    //PSXBIOS_LOG("softCall %x:%x", pc, ra);
+    PSXBIOS_LOG_IRQ("softCall %x:%x", pc, ra);
     u32 sra = ra;
     HleExecuteRecursive(pc, kSoftCallBaseRetAddr);
     ra = sra;
-    //PSXBIOS_LOG("end softCall");
+    PSXBIOS_LOG_IRQ("end softCall");
 }
 
 const u32 CP0_MODE_MASK     = 0x3F;
@@ -3594,7 +3594,7 @@ void psxBiosException80() {
     auto excode = (CP0_CAUSE & 0x3c) >> 2;
     switch (excode) {
         case 0x00: { // Interrupt
-            //PSXBIOS_LOG("interrupt fire");
+            PSXBIOS_LOG_IRQ("interrupt fire");
             saveContextException();
 
             // Safest place to deliver event. Register context is saved, IRQ are disabled
@@ -3622,7 +3622,7 @@ void psxBiosException80() {
 
                     // Call first the verifier
                     if (!verifier)  continue;
-                    //PSXBIOS_LOG("\tIRQ verifier %x", verifier);
+                    PSXBIOS_LOG_IRQ("\tIRQ verifier %x", verifier);
                     softCall(verifier);
 
                     // Continue if verifier return 0
@@ -3630,7 +3630,7 @@ void psxBiosException80() {
 
                     // Otherwise fire the handler
                     a0 = v0;
-                    //PSXBIOS_LOG("\tIRQ handler %x", handler);
+                    PSXBIOS_LOG_IRQ("\tIRQ handler %x", handler);
                     softCall(handler);
 
                     // FIXME: need to push current queue on the stack.
@@ -3641,7 +3641,7 @@ void psxBiosException80() {
 
             if (g_hle->jmp_int) {
                 uint32_t* jmpptr = (uint32_t*)PSXM(g_hle->jmp_int);
-                //PSXBIOS_LOG("jmp_int @ %08x - ra=%08x sp=%08x fp=%08x", g_hle->jmp_int, jmpptr[0], jmpptr[1], jmpptr[2]);
+                PSXBIOS_LOG_IRQ("jmp_int @ %08x - ra=%08x sp=%08x fp=%08x", g_hle->jmp_int, jmpptr[0], jmpptr[1], jmpptr[2]);
                 Write_ISTAT(0xffffffff);
 
                 ra = jmpptr[0];
