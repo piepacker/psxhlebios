@@ -65,6 +65,7 @@ u32 HANDLER_MAX               = 4;
 u32 EVCB_MAX                  = 32;
 
 HleState* g_hle;
+u32 g_delay_return_from_exception = 0;
 
 // oh silly PCSX. they did the classic VM nono and just recursively called the interpreter
 // in order to emulate softCalls. A miracle this ever worked.
@@ -1887,6 +1888,7 @@ void psxBios_ReturnFromException(HLE_BIOS_CALL_ARGS) { // 17
 #if HLE_MEDNAFEN_IFC
     PSX_CPU->RecalcIPCache();
 #endif
+    AdvanceClock(g_delay_return_from_exception);
 }
 
 void psxBios_ResetEntryInt(HLE_BIOS_CALL_ARGS) { // 18
@@ -3290,6 +3292,52 @@ const char* uri_find_domain_colon(const char* src) {
     return nullptr;
 }
 
+static std::string exe_to_game_code(std::string code) {
+    if (code.empty())
+        return "";
+
+
+    std::string::size_type pos = code.rfind('\\');
+    if (pos != std::string::npos)
+    {
+        code.erase(0, pos + 1);
+    }
+    else
+    {
+        pos = code.rfind(':');
+        if (pos != std::string::npos)
+            code.erase(0, pos + 1);
+    }
+    // SCES_123.45 -> SCES-12345
+    for (std::string::size_type pos = 0; pos < code.size();)
+    {
+        if (code[pos] == '.')
+        {
+            code.erase(pos, 1);
+            continue;
+        }
+
+        if (code[pos] == '_')
+            code[pos] = '-';
+        else
+            code[pos] = static_cast<char>(std::toupper(code[pos]));
+
+        pos++;
+    }
+    return code;
+}
+
+static void init_per_game_code(const std::string& code) {
+    g_delay_return_from_exception = 0;
+    if (code == "SLUS-00520") { // FIFA 98
+        // Delay the return from exception to avoid a black screen when loading the video
+        // This delay include both the entering and the return to/from exception
+        // HLE is quite fast to handle exception, in real life, CPU context must be saved/restored
+        // Handler array must be traversed. IRQ related register must be read.
+        g_delay_return_from_exception = 300; // Magical value not measured
+    }
+}
+
 void psxBiosLoadExecCdrom() {
     psxFs_CacheFilesystem();
 
@@ -3336,6 +3384,8 @@ void psxBiosLoadExecCdrom() {
 
     // TCB/Event size can be updated by system;cnf setting
     psxBiosInitKernelDataStructure();
+
+    std::string game_code = exe_to_game_code(exepath);
 
     if (exepath.empty()) {
         exepath = "cdrom:///PSX.EXE";
@@ -3461,6 +3511,8 @@ void psxBiosLoadExecCdrom() {
     else {
         SysErrorPrintf("Failed to load boot executable: %s\n", exedata);
     }
+
+    init_per_game_code(game_code);
 }
 
 void psxBios_PADpoll(int pad, u8* buf) {
