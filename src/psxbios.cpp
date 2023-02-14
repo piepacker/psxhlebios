@@ -1839,8 +1839,6 @@ void psxBios_StopPAD(HLE_BIOS_CALL_ARGS) { // 14
     PSXBIOS_LOG("psxBios_%s", biosB0n[0x14]);
 
     g_hle->pad_started = 0;
-    g_hle->pad_buf1 = 0;
-    g_hle->pad_buf2 = 0;
     pc0 = ra;
 }
 
