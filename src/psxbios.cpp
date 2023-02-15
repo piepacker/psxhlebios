@@ -3335,7 +3335,7 @@ static void init_per_game_code(const std::string& code) {
         // This delay include both the entering and the return to/from exception
         // HLE is quite fast to handle exception, in real life, CPU context must be saved/restored
         // Handler array must be traversed. IRQ related register must be read.
-        g_delay_return_from_exception = 300; // Magical value not measured
+        g_delay_return_from_exception = 1000; // Magical value not measured
     }
 }
 
