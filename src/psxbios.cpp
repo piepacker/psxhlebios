@@ -3306,6 +3306,9 @@ static std::string exe_to_game_code(std::string code) {
         if (pos != std::string::npos)
             code.erase(0, pos + 1);
     }
+    pos = code.rfind(';');
+    if (pos != std::string::npos)
+        code.erase(pos, std::string::npos);
     // SCES_123.45 -> SCES-12345
     for (std::string::size_type pos = 0; pos < code.size();)
     {
@@ -3380,10 +3383,27 @@ void psxBiosLoadExecCdrom() {
         SysErrorPrintf("SYSTEM.CNF not found. Falling back on PSX.EXE...\n");
     }
 
+    // Could be useful for per game hack
+    std::string game_code = exe_to_game_code(exepath);
+
+    if (game_code == "SLES-03221"
+        || game_code == "SLES-03222"
+        || game_code == "SLES-03223"
+        || game_code == "SLES-03224"
+        || game_code == "SLUS-01279"
+        || game_code == "SLUS-90087"
+        || game_code == "CPCS-00701"
+        || game_code == "SLES-03225"
+        || game_code == "SLPM-80573") { // Dino Crisis 2
+        // Dev screw-ed up the allocation of TCB. They expect
+        // to have 4 user threads + 1 kernel thread
+        // As game dev writes directly in the kernel memory, you have
+        // a nice buffer overrun...
+        TCB_MAX += 1;
+    }
+
     // TCB/Event size can be updated by system;cnf setting
     psxBiosInitKernelDataStructure();
-
-    std::string game_code = exe_to_game_code(exepath);
 
     if (exepath.empty()) {
         exepath = "cdrom:///PSX.EXE";
