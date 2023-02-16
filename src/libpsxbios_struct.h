@@ -166,6 +166,8 @@ struct HleState {
     uint32_t async_event_nb;
     AsyncEventInfo async_events[128];
     uint32_t busy_card_info; // 1 bit per port (so 2 bits)
+    // Change directory
+    uint8_t pwd[32];
 };
 
 extern HleState* g_hle;

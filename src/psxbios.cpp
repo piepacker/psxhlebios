@@ -1135,6 +1135,12 @@ _start:
     pc0 = ra;
 }
 
+void psxBios_cd(HLE_BIOS_CALL_ARGS) {
+    PSXBIOS_LOG("psxBios_%s: %s", biosB0n[0x40], Ra0);
+    strncpy((char*)g_hle->pwd, Ra0, sizeof(g_hle->pwd) - 1);
+    pc0 = ra;
+}
+
 void psxBios_format(HLE_BIOS_CALL_ARGS) { // 0x41
     PSXBIOS_LOG("format");
     // TO BE tested on PCSX
@@ -1214,9 +1220,21 @@ extern bool         psxFs_ReadSectorData2048(void* dest,  psdisc_sec_t sector, i
 void psxBios_Load(HLE_BIOS_CALL_ARGS) { // 0x42
     PSXBIOS_LOG("psxBios_%s: %s, %x", biosA0n[0x42], Ra0, a1);
 
+    std::string path(Ra0);
+    if (g_hle->version >= 2 && g_hle->pwd[0] == 'c') {
+        std::string new_path((char*)g_hle->pwd);
+        std::string::size_type pos = path.find(':');
+        if (pos != std::string::npos) {
+            new_path.append(1, '\\');
+            new_path.append(path, pos +1, std::string::npos);
+            path = new_path;
+        }
+        PSXBIOS_LOG("=> overwrite path with %s", path.c_str());
+    }
+
     static_assert((sizeof(EXEC_DESCRIPTOR) + sizeof(PSX_EXE_HEADER)) == 76);
 
-    if (auto sector = psxFs_GetFileSector(Ra0)) {
+    if (auto sector = psxFs_GetFileSector(path.c_str())) {
         uint8_t buf[2048];
         psxFs_ReadSectorData2048(buf, sector);
 
@@ -3060,7 +3078,7 @@ void psxBiosInit_Lib() {
     //biosB0[0x3b] = psxBios_putc;
     biosB0[0x3c] = psxBios_getchar;
     //biosB0[0x3e] = psxBios_gets;
-    //biosB0[0x40] = psxBios_cd;
+    biosB0[0x40] = psxBios_cd;
     //biosB0[0x46] = psxBios_undelete;
     biosB0[0x47] = psxBios_AddDevice;
     biosB0[0x48] = psxBios_RemoveDevice;
@@ -3140,7 +3158,7 @@ void psxBiosInitFull() {
     // Default init most field to 0
     memset(g_hle, 0, sizeof(HleState));
 
-    g_hle->version = 1;
+    g_hle->version = 2;
     g_hle->cardState = ~0;
 
     psxBiosInitKernelDataStructure();
