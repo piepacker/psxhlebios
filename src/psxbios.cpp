@@ -1874,6 +1874,9 @@ void psxBios_PAD_init(HLE_BIOS_CALL_ARGS) { // 15
 
     g_hle->pad_buf = a1;
     g_hle->pad_started = 1;
+    // Reset user pointer. Fix graphical corruption in Persona
+    g_hle->pad_buf1 = 0;
+    g_hle->pad_buf2 = 0;
 
     *(int*)PSXM(g_hle->pad_buf) = -1;
     CP0_STATUS |= 0x401;
