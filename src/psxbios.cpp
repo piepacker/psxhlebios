@@ -2272,18 +2272,23 @@ void psxBios_firstfile(HLE_BIOS_CALL_ARGS) { // 42
 
     v0 = 0;
 
-    //auto mcd = PSX_FIO->GetMemcardDevice(0);
-
     if (pa0) {
         strcpy(g_hle->ffile, pa0);
         g_hle->nfile = 0;
         // firstfile() calls _card_read() internally, so deliver it's event
         // API seems to be synchronous (firstfile won't return before the delivery of the event)
+        // Persona triggers a callback on EVENT_CLASS_CARD_BIOS
         if (!strncmp(pa0, "bu00", 4)) {
-            DeliverEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
+            auto spec = VmcEnabled(0) ? EVENT_SPEC_END_IO : EVENT_SPEC_TIMEOUT;
+
+            DeliverEvent(EVENT_CLASS_CARD_HW, spec);
+            PostAsyncEvent(EVENT_CLASS_CARD_BIOS, spec, 0);
             bufile(1, a1);
         } else if (!strncmp(pa0, "bu10", 4)) {
-            DeliverEvent(EVENT_CLASS_CARD_HW, EVENT_SPEC_END_IO);
+            auto spec = VmcEnabled(1) ? EVENT_SPEC_END_IO : EVENT_SPEC_TIMEOUT;
+
+            DeliverEvent(EVENT_CLASS_CARD_HW, spec);
+            PostAsyncEvent(EVENT_CLASS_CARD_BIOS, spec, 1);
             bufile(2, a1);
         }
     }

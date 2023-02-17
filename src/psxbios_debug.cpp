@@ -136,6 +136,8 @@ void psxBiosPrintCall(int table) {
             return;
         if (call == 0x3d)
             PSXBIOS_LOG("psxBios put: %c", a0);
+        else if (call == 0x42)
+            PSXBIOS_LOG("psxBios traceB: %s (%s, 0x%x) (EPC:0x%x, RA:0x%x)", biosB0n[call], Ra0, a1, CP0_EPC, ra);
         else if (print_all || biosB0[call])
             PSXBIOS_LOG("psxBios traceB: %s (0x%x, 0x%x, 0x%x, 0x%x) (EPC:0x%x, RA:0x%x)", biosB0n[call], a0, a1, a2, a3, CP0_EPC, ra);
     } else if (table == 0xC0) {

@@ -71,6 +71,7 @@ const uint32_t EVENT_CLASS_EXCEPTION = 0xf000'0010;
 
 const uint16_t EVENT_SPEC_INTERRUPT = 0x0002;
 const uint16_t EVENT_SPEC_END_IO    = 0x0004;
+const uint16_t EVENT_SPEC_TIMEOUT   = 0x0100;
 const uint16_t EVENT_SPEC_SYSCALL   = 0x4000;
 
 typedef struct {
