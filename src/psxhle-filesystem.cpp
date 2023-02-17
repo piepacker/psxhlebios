@@ -250,6 +250,13 @@ void psxFs_CacheFilesystem() {
     };
 #elif HLE_DUCKSTATION_IFC
     parser.read_data_cb = [&](uint8_t* dest, psdisc_off_t sector, psdisc_off_t offset, psdisc_off_t length) {
+        // Tomb Raider 2 got strange sector, maybe a copy-protection. Skip the sector to
+        // allow booting the game
+        if (length == 0) {
+            log_error( "(psxfs) psxFs_CacheFilesystem: invalid length, skip sector");
+            return false;
+        }
+
         dbg_check(offset == 0);
         dbg_check(sector);
         dbg_check((length & 2047) == 0);
