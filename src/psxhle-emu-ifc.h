@@ -65,6 +65,10 @@
 #   define HLE_ENABLE_YIELD     0
 #endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #undef SysPrintf
 #undef SysErrorPrintf
 
@@ -96,6 +100,10 @@
 
 #if !defined(SysErrorPrintf)
 #   define SysErrorPrintf(fmt, ...) (printf(fmt "\n", ##__VA_ARGS__), fflush(stdout))
+#endif
+
+#ifdef __cplusplus
+}
 #endif
 
 #if HLE_PCSX_IFC
