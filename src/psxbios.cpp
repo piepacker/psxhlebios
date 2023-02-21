@@ -65,7 +65,6 @@ u32 HANDLER_MAX               = 4;
 u32 EVCB_MAX                  = 32;
 
 HleState* g_hle;
-u32 g_delay_return_from_exception = 0;
 
 // oh silly PCSX. they did the classic VM nono and just recursively called the interpreter
 // in order to emulate softCalls. A miracle this ever worked.
@@ -1907,7 +1906,6 @@ void psxBios_ReturnFromException(HLE_BIOS_CALL_ARGS) { // 17
 #if HLE_MEDNAFEN_IFC
     PSX_CPU->RecalcIPCache();
 #endif
-    AdvanceClock(g_delay_return_from_exception);
 }
 
 void psxBios_ResetEntryInt(HLE_BIOS_CALL_ARGS) { // 18
@@ -3354,17 +3352,6 @@ static std::string exe_to_game_code(std::string code) {
     return code;
 }
 
-static void init_per_game_code(const std::string& code) {
-    g_delay_return_from_exception = 0;
-    if (code == "SLUS-00520") { // FIFA 98
-        // Delay the return from exception to avoid a black screen when loading the video
-        // This delay include both the entering and the return to/from exception
-        // HLE is quite fast to handle exception, in real life, CPU context must be saved/restored
-        // Handler array must be traversed. IRQ related register must be read.
-        g_delay_return_from_exception = 1000; // Magical value not measured
-    }
-}
-
 void psxBiosLoadExecCdrom() {
     psxFs_CacheFilesystem();
 
@@ -3555,8 +3542,6 @@ void psxBiosLoadExecCdrom() {
     else {
         SysErrorPrintf("Failed to load boot executable: %s\n", exedata);
     }
-
-    init_per_game_code(game_code);
 }
 
 void psxBios_PADpoll(int pad, u8* buf) {
@@ -3590,6 +3575,13 @@ void psxBios_PADpoll(int pad, u8* buf) {
 
 void biosInterrupt() {
     auto istat = Read_ISTAT() & Read_IMASK();
+
+    if (istat & 1) { // Vsync
+        // During vsync, bios will access the pad most of the time (see logic below)
+        // PAD access is very slow.
+        // This delay seems to fix black screen issue with FIFA98 SLUS-00520
+        AdvanceClock(30 * 1000);
+    }
 
     // Looks like this is polling the pads on every interrupt, which is definitely
     // not what we want. Will have to dig into it later and see if I can figure out why

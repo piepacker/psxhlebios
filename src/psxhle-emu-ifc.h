@@ -233,7 +233,7 @@ static void psxCpuClear(u32 startPC, int size_in_words)
 }
 
 static void AdvanceClock(u64 tick_count) {
-    CPU::AddPendingTicks(200);
+    CPU::AddPendingTicks(tick_count);
 }
 
 #endif
