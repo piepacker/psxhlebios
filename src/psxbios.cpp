@@ -3779,6 +3779,12 @@ void psxBiosException80() {
             dbg_check(false);
         break;
 
+        case 0x9: // breakpoint
+            pc0 = CP0_EPC + 4;
+            CP0_RFE();
+
+            return;
+
         case 0xb:  // Reserved instruction exception
             dbg_check(false);
         break;
