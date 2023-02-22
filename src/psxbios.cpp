@@ -134,6 +134,16 @@ void psxBios_todigit(HLE_BIOS_CALL_ARGS) { // 0x0a
     pc0 = ra;
 }
 
+void psxBios_strtol(HLE_BIOS_CALL_ARGS) { // 0x0d
+    char* endptr;
+    v0 = strtoul(Ra0, &endptr, a2);
+    if (a1) {
+        u32 end = (u32)(endptr - Ra0) + LoadFromLE(a0);
+        StoreToLE(psxMu32ref(a1), end);
+    }
+    pc0 = ra;
+}
+
 void psxBios_abs(HLE_BIOS_CALL_ARGS) { // 0x0e
     if ((s32)a0 < 0) v0 = -(s32)a0;
     else v0 = a0;
@@ -2743,8 +2753,8 @@ void psxBiosInit_StdLib() {
     //biosA0[0x07] = psxBios_sys_a0_07;
     biosA0[0x0a] = psxBios_todigit;
     //biosA0[0x0b] = psxBios_atof;
-    //biosA0[0x0c] = psxBios_strtoul;
-    //biosA0[0x0d] = psxBios_strtol;
+    biosA0[0x0c] = psxBios_strtol;
+    biosA0[0x0d] = psxBios_strtol;
     biosA0[0x0e] = psxBios_abs;
     biosA0[0x0f] = psxBios_labs;
     biosA0[0x10] = psxBios_atoi;
