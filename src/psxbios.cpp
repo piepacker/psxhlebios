@@ -3671,6 +3671,49 @@ void psxBiosException180() {
     dbg_abort();
 }
 
+void psxBiosSyscallHandler() {
+    //PSXBIOS_LOG("syscall exp %x", a0);
+
+    // Some games (Dragon quest 7 Japan...) may register an userland
+    // syscall handler (likely to fix something, and to add new features)
+    u32 head = LoadFromLE(psxMu32ref(G_HANDLERS));
+    while (head != 0) {
+        HandlerInfo* h = (HandlerInfo*)PSXM(head);
+        if (h->verifier != 0) {
+            // An userland exception was registered, let's execute it
+            pc0 = h->verifier;
+            return;
+        }
+        head = h->next;
+    }
+
+    switch (a0) {
+        case 1: // EnterCritical - disable irq's
+            /* Fixes Medievil 2 not loading up new game, Digimon World not booting up and possibly others */
+            v0 = (CP0_STATUS & 0x404) == 0x404;
+            CP0_STATUS &= ~0x404;
+            break;
+
+        case 2: // ExitCritical - enable irq's
+            CP0_STATUS |= 0x404;
+            break;
+
+        /* Normally this should cover SYS(00h, SYS(04h but they don't do anything relevant so... */
+
+        default:
+            // Jumping flash, sigh...
+            // DeliverEvent might fiddle with the TCB content, so you need to restore registers
+            DeliverEvent(EVENT_CLASS_EXCEPTION, EVENT_SPEC_SYSCALL);
+            restoreContextException();
+            break;
+    }
+
+    pc0 = CP0_EPC + 4;
+    CP0_RFE();
+
+    return;
+}
+
 void psxBiosException80() {
     // Special handling for COP2 instruction
     //
@@ -3684,6 +3727,8 @@ void psxBiosException80() {
         CP0_EPC = CP0_EPC + 4;
     }
 
+    saveContextException();
+
     static const char* const exmne[16] =
     {
         "INT", "MOD", "TLBL", "TLBS", "ADEL", "ADES", "IBE", "DBE", "SYSCALL", "BP", "RI", "COPU", "OV", NULL, NULL, NULL
@@ -3693,7 +3738,6 @@ void psxBiosException80() {
     switch (excode) {
         case 0x00: { // Interrupt
             PSXBIOS_LOG_IRQ("interrupt fire");
-            saveContextException();
 
             // Safest place to deliver event. Register context is saved, IRQ are disabled
             // Note: by contruction async event can only be delivered unpon interruption of
@@ -3758,32 +3802,8 @@ void psxBiosException80() {
         }
 
         case 0x08: // Syscall
-            //PSXBIOS_LOG("syscall exp %x", a0);
-            switch (a0) {
-                case 1: // EnterCritical - disable irq's
-                    /* Fixes Medievil 2 not loading up new game, Digimon World not booting up and possibly others */
-                    v0 = (CP0_STATUS & 0x404) == 0x404;
-                    CP0_STATUS &= ~0x404;
-                    break;
-
-                case 2: // ExitCritical - enable irq's
-                    CP0_STATUS |= 0x404;
-                    break;
-
-                /* Normally this should cover SYS(00h, SYS(04h but they don't do anything relevant so... */
-                default:
-                    // Jumping flash, sigh...
-                    // DeliverEvent might fiddle with the TCB content, so you need to save and restore registers
-                    saveContextException();
-                    DeliverEvent(EVENT_CLASS_EXCEPTION, EVENT_SPEC_SYSCALL);
-                    restoreContextException();
-                    break;
-            }
-
-            pc0 = CP0_EPC + 4;
-            CP0_RFE();
-
-            return;
+           psxBiosSyscallHandler();
+           return;
 
         case 0xa:  // Reserved instruction exception
             dbg_check(false);
