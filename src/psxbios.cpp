@@ -66,6 +66,21 @@ u32 EVCB_MAX                  = 32;
 
 HleState* g_hle;
 
+static bool s_use_userland_syscall_handler = false;
+
+void set_per_game_config(const std::string& code) {
+    s_use_userland_syscall_handler = false;
+    // Dragon Quest 7
+    if (code == "SCPS-45504" ||
+        code == "SCPS-45505" ||
+        code == "SLPM-86500" ||
+        code == "SLPM-86501" ||
+        code == "SLPM-87352" ||
+        code == "SLPM-87353"){
+        s_use_userland_syscall_handler = true;
+    }
+}
+
 // oh silly PCSX. they did the classic VM nono and just recursively called the interpreter
 // in order to emulate softCalls. A miracle this ever worked.
 // This hleSoftCall hack works around the common case failure of one re-entrant call, but fails
@@ -3424,6 +3439,7 @@ void psxBiosLoadExecCdrom() {
         // a nice buffer overrun...
         TCB_MAX += 1;
     }
+    set_per_game_config(game_code);
 
     // TCB/Event size can be updated by system;cnf setting
     psxBiosInitKernelDataStructure();
@@ -3676,15 +3692,17 @@ void psxBiosSyscallHandler() {
 
     // Some games (Dragon quest 7 Japan...) may register an userland
     // syscall handler (likely to fix something, and to add new features)
-    u32 head = LoadFromLE(psxMu32ref(G_HANDLERS));
-    while (head != 0) {
-        HandlerInfo* h = (HandlerInfo*)PSXM(head);
-        if (h->verifier != 0) {
-            // An userland exception was registered, let's execute it
-            pc0 = h->verifier;
-            return;
+    if (s_use_userland_syscall_handler) {
+        u32 head = LoadFromLE(psxMu32ref(G_HANDLERS));
+        while (head != 0) {
+            HandlerInfo* h = (HandlerInfo*)PSXM(head);
+            if (h->verifier != 0) {
+                // An userland exception was registered, let's execute it
+                pc0 = h->verifier;
+                return;
+            }
+            head = h->next;
         }
-        head = h->next;
     }
 
     switch (a0) {
@@ -3805,15 +3823,15 @@ void psxBiosException80() {
            psxBiosSyscallHandler();
            return;
 
-        case 0xa:  // Reserved instruction exception
-            dbg_check(false);
-        break;
-
         case 0x9: // breakpoint
             pc0 = CP0_EPC + 4;
             CP0_RFE();
 
             return;
+
+        case 0xa:  // Reserved instruction exception
+            dbg_check(false);
+        break;
 
         case 0xb:  // Reserved instruction exception
             dbg_check(false);
@@ -4092,4 +4110,6 @@ void HleHookAfterLoadState(const char* game_code) {
 
     // Step8 clear all emulators caches, we just updated all the kernel ram
     ClearAllCaches();
+
+    set_per_game_config(std::string(game_code));
 }
