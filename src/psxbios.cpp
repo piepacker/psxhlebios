@@ -1202,6 +1202,11 @@ void psxBios_Exec(HLE_BIOS_CALL_ARGS) { // 43
     header->SavedRA = ra;
     header->SavedS0 = s0;
 
+    // Clear the BSS section
+    if (header->b_addr && header->b_size) {
+        memset(PSXM(header->b_addr), 0, header->b_size);
+    }
+
     if (header->s_addr != 0) {
         tmp = header->s_addr + header->s_size;
         sp = tmp;
