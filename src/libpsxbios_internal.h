@@ -53,3 +53,4 @@ void psxBios_WaitEvent(HLE_BIOS_CALL_ARGS);
 void psxBios_TestEvent(HLE_BIOS_CALL_ARGS);
 void psxBios_EnableEvent(HLE_BIOS_CALL_ARGS);
 void psxBios_DisableEvent(HLE_BIOS_CALL_ARGS);
+void setOpenEventStatus(uint32_t slot, EVENT_STATUS status);

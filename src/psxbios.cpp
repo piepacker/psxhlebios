@@ -67,17 +67,32 @@ u32 EVCB_MAX                  = 32;
 HleState* g_hle;
 
 static bool s_use_userland_syscall_handler = false;
+static bool s_remove_cdrom_events = false;
 
 void set_per_game_config(const std::string& code) {
     s_use_userland_syscall_handler = false;
+    s_remove_cdrom_events = false;
     // Dragon Quest 7
     if (code == "SCPS-45504" ||
         code == "SCPS-45505" ||
         code == "SLPM-86500" ||
         code == "SLPM-86501" ||
         code == "SLPM-87352" ||
-        code == "SLPM-87353"){
+        code == "SLPM-87353") {
+        // Some games may register an userland syscall handler which likely intended to fix something and add new features
+        // For DQ7, our HLE handler kinds of break threadings (Fix menu corruption and inputs)
         s_use_userland_syscall_handler = true;
+    }
+    // See psxBios__96_remove for an explanation
+    // 007 The World Is Not Enough
+    if (code == "SLES-03136" ||
+        code == "SLES-03137" ||
+        code == "SLES-03135" ||
+        code == "SLES-03134" ||
+        code == "SLES-03138" ||
+        code == "SLUS-01272" ||
+        code == "SLUS-00978") {
+        s_remove_cdrom_events = true;
     }
 }
 
@@ -1469,6 +1484,22 @@ void psxBios__96_init(HLE_BIOS_CALL_ARGS) { // 71
 
 void psxBios__96_remove(HLE_BIOS_CALL_ARGS) { // 72
     PSXBIOS_LOG("psxBios_%s", biosA0n[0x72]);
+
+    // In theory, bios shall allocate some events for the CDrom, we don't need them
+    // However it breaks control in "007 The World Is Not Enough" in a subtle way
+    //
+    // Note: so far, events can't always be deleted because there weren't allocated in the first place
+    // (which must be done in psxBios__96_init and others init/boot part that would init the CDrom)
+    //
+    // Full story: here a quick description of game insanity
+    // * close all events handler (even the one that are owned by the bios) (likely with a loop)
+    // * open new events for input, which will take the first slots
+    // * call this bios_call and expect (the bios) to remove previous events (owned by the game...)
+    // * open new events for input again
+    if (s_remove_cdrom_events) {
+        for (u32 i = 0; i < 5; i++)
+            setOpenEventStatus(i, EVENT_STATUS::FREE);
+    }
 
     pc0 = ra;
 }
