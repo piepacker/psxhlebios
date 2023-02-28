@@ -69,11 +69,11 @@
 #undef SysErrorPrintf
 
 #if HLE_DUCKSTATION_IFC
-#define SysErrorPrintf(fmt, ...)    Log_ErrorPrintf(fmt, ##__VA_ARGS__)
-#define SysPrintf(fmt, ...)         Log_VerbosePrintf(fmt, ##__VA_ARGS__)
-#define PSXBIOS_LOG(fmt, ...)       Log_VerbosePrintf(fmt, ##__VA_ARGS__)
-#define PSXBIOS_LOG_SPAM(fmt, ...)  Log_DebugPrintf(fmt, ##__VA_ARGS__)
-#define PSXBIOS_LOG_IRQ(fmt, ...)  Log_DebugPrintf(fmt, ##__VA_ARGS__)
+#define SysErrorPrintf(...)    Log_ErrorPrintf(__VA_ARGS__)
+#define SysPrintf(...)         Log_VerbosePrintf(__VA_ARGS__)
+#define PSXBIOS_LOG(...)       Log_VerbosePrintf(__VA_ARGS__)
+#define PSXBIOS_LOG_SPAM(...)  Log_DebugPrintf(__VA_ARGS__)
+#define PSXBIOS_LOG_IRQ(...)  Log_DebugPrintf(__VA_ARGS__)
 #endif
 
 #if !defined(PSXBIOS_LOG)
